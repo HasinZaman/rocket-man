@@ -1,5 +1,3 @@
-
-
 use std::f32::consts::{FRAC_PI_2, PI};
 
 use bevy::{
@@ -7,20 +5,46 @@ use bevy::{
     picking::backend::ray::RayMap, post_process::bloom::Bloom, prelude::*,
 };
 
-use crate::{player::{camera::look_camera, ui::{center_cursor, fullscreen_startup, hide_cursor}}};
+use crate::player::{
+    camera::{look_camera, setup_mask_materials, MaskMaterials, OutlineCamera, OutlineTexture},
+    controls::{joystick_controller, select_tool, throttle_controller, update_key_bindings, Arms, KeyBindings},
+    ui::{center_cursor, fullscreen_startup, hide_cursor},
+};
 
 pub mod camera;
+pub mod sobel; // should be moved to camera
+
+pub mod controls;
 
 pub mod ui;
 
 pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (hide_cursor, fullscreen_startup, setup_focus_material))
-            .add_systems(Update, (look_camera, center_cursor, check_camera_selection));
+        app
+            // .add_plugins(SobelPlugin)
+            .init_resource::<MaskMaterials>()
+            .init_resource::<OutlineTexture>()
+            .init_resource::<KeyBindings>()
+            .init_resource::<Arms>()
+            .add_systems(
+                Startup,
+                (hide_cursor, fullscreen_startup, setup_mask_materials),
+            )
+            .add_systems(
+                Update,
+                (
+                    look_camera,
+                    center_cursor,
+                    check_camera_selection,
+                    select_tool,
+                    update_key_bindings,
+                    throttle_controller,
+                    joystick_controller,
+                ),
+            );
     }
 }
-
 
 #[derive(Component)]
 pub struct Player;
@@ -34,35 +58,21 @@ pub struct Focused;
 #[derive(Component)]
 pub struct Selected;
 
-#[derive(Resource)]
-pub struct FocusMaterial {
-    pub handle: Handle<StandardMaterial>,
-}
-
-fn setup_focus_material(
-    mut commands: Commands,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    let highlight = materials.add(StandardMaterial {
-        base_color: Color::srgb(1.0, 1.0, 1.0), // yellow
-        emissive: LinearRgba::new(1., 1., 1., 1.),
-        unlit: true,
-        ..default()
-    });
-
-    // Store it as a resource for reuse
-    commands.insert_resource(FocusMaterial { handle: highlight });
-}
-
 fn check_camera_selection(
-    focus_material: Res<FocusMaterial>,
-    camera_transform: Single<&GlobalTransform, With<Camera3d>>,
+    mask_materials: Res<MaskMaterials>,
+    camera_transform: Single<
+        &GlobalTransform,
+        (With<Camera3d>, With<Player>, Without<OutlineCamera>),
+    >,
 
     mut commands: Commands,
-    
+
     mut raycast: MeshRayCast,
-    
-    selectable_query: Query<(Entity, &Transform, &Mesh3d, &Name), (With<Selectable>, Without<Selected>, Without<Focused>)>,
+
+    mut selectable_query: Query<
+        (Entity, &mut MeshMaterial3d<StandardMaterial>, &Transform),
+        (With<Selectable>, Without<Selected>, Without<Focused>),
+    >,
     remove_focus_query: Query<(Entity, &Children), (With<Selectable>, With<Focused>)>,
 ) {
     let ray: Ray3d = Ray3d::new(camera_transform.translation(), camera_transform.forward());
@@ -78,47 +88,17 @@ fn check_camera_selection(
             }
         })
     {
-        // remove focus
-        for (focused_entity, children) in remove_focus_query.iter() {
-            commands.entity(focused_entity).remove::<Focused>();
+        if let Ok((_, mut material, transform)) = selectable_query.get_mut(entity) {
+            material.0 = mask_materials.white.clone();
 
-            // Clean up any outline meshes that were attached as children
-            for child_entity in children.iter() {
-                commands.entity(child_entity).despawn();
-            }
-        }
+            commands.entity(entity).insert(Focused);
 
-        if let Ok((_, transform,  mesh, name)) = selectable_query.get(entity) {
-            let mesh_handle = &mesh.0;
-            let mut outline_transform = Transform::default();
-
-            outline_transform.translation = Vec3::ZERO;
-
-            outline_transform.scale = 1.005 * transform.scale;
-
-            outline_transform.scale.x *= -1.;
-
-            commands.spawn((
-                Mesh3d(mesh_handle.clone()),
-                MeshMaterial3d(focus_material.handle.clone()),
-                outline_transform,
-                ChildOf(entity)
-            ));
-            commands.entity(entity)
-                .insert(Focused);
-            
             println!(
-                "Camera is looking at entity {:?} named '{}' at {:?}",
-                entity, name.as_str(), transform
+                "Camera is looking at entity {:?} at {:?}",
+                entity, transform
             );
         } else {
-            for (focused_entity, children) in remove_focus_query.iter() {
-                commands.entity(focused_entity).remove::<Focused>();
-                for child in children.iter() {
-                    commands.entity(child).despawn();
-                }
-            }
+            // remove focus from other selectables
         }
     }
 }
-

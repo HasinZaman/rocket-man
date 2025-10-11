@@ -1,19 +1,22 @@
 use bevy::prelude::*;
 
 use crate::{
-    cf104::CF104Plugin, player::PlayerPlugin,
+    cf104::CF104Plugin,
+    player::{Player, PlayerPlugin, camera::OutlineCamera},
 };
 
-pub mod player;
 pub mod cf104;
-
+pub mod player;
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins((CF104Plugin, PlayerPlugin))
-        .add_systems(Update, (debug_camera_movement))
+        .add_plugins((PlayerPlugin))
+        .add_plugins((CF104Plugin))
+        // .add_plugins((CF104Plugin.after(PlayerPlugin)))
+        // .add_systems(Update, (exit_on_esc))
         .run();
 }
+
 
 /// set up a simple 3D scene
 fn setup(
@@ -51,7 +54,7 @@ fn setup(
 fn debug_camera_movement(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut query: Query<&mut Transform, With<Camera3d>>,
+    mut query: Query<&mut Transform, (With<Camera3d>, With<Player>, Without<OutlineCamera>)>,
 ) {
     let mut transform = query.single_mut().unwrap();
 

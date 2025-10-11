@@ -1,29 +1,63 @@
-use std::f32::consts::FRAC_PI_2;
+use std::f32::consts::{FRAC_PI_2, PI};
 
 use bevy::prelude::*;
 
-use crate::player::{camera::set_up_player_camera, Player, Selectable};
+use crate::player::{
+    Player, Selectable,
+    camera::{MaskMaterials, mask_mesh, set_up_player_camera},
+};
 
 // CF104
 #[derive(Component)]
 pub struct Plane;
 
 #[derive(Component)]
-pub struct Throttle(u8);
+pub struct Throttle(pub f32);
 
 impl Default for Throttle {
     fn default() -> Self {
-        Self(0u8)
+        Self(0.)
     }
 }
+
 #[derive(Component)]
-pub struct Joystick(Vec2);
+pub struct RotRange {
+    pub min: Quat,
+    pub max: Quat,
+}
+
+#[derive(Component)]
+pub struct Joystick(pub Vec2);
 
 impl Default for Joystick {
     fn default() -> Self {
         Self(Vec2::ZERO)
     }
 }
+
+#[derive(Component, Debug, Clone, Copy, PartialEq)]
+pub struct RotRange2D {
+    pub center: Quat,
+    pub radius: Vec2,
+}
+
+impl RotRange2D {
+    pub fn new(center: Quat, radius: Vec2) -> Self {
+        Self { center, radius }
+    }
+
+    pub fn to_quat(&self, input: Vec2) -> Quat {
+        let clamped = input.clamp(Vec2::splat(-1.0), Vec2::splat(1.0));
+
+        let yaw = self.radius.x * clamped.x;
+        let pitch = self.radius.y * clamped.y;
+
+        let offset = Quat::from_rotation_y(yaw) * Quat::from_rotation_x(pitch);
+
+        self.center * offset
+    }
+}
+
 pub struct CF104Plugin;
 impl Plugin for CF104Plugin {
     fn build(&self, app: &mut App) {
@@ -36,6 +70,9 @@ fn load_cf104<const PLAYER: bool>(
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
+
+    mask_materials: &Res<MaskMaterials>,
+    images: &mut ResMut<Assets<Image>>,
 
     tip_fuel_tanks: Option<f32>,
 ) -> Entity {
@@ -145,7 +182,7 @@ fn load_cf104<const PLAYER: bool>(
     commands.spawn(canopy_door_bundle);
 
     // load cockpit shell
-    let shell_bundle = {
+    let shell_id = {
         let mesh: Handle<Mesh> =
             asset_server.load(&format!("{cf104_asset_path}#Mesh{}/Primitive0", 6));
         let material_handle = materials.add(StandardMaterial::default());
@@ -158,17 +195,22 @@ fn load_cf104<const PLAYER: bool>(
             z: 0.0027964115142822266,
         };
 
-        (
-            Mesh3d(mesh),
-            MeshMaterial3d(material_handle),
-            transform,
-            ChildOf(canopy_id),
-        )
+        let shell_id = commands
+            .spawn((
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(material_handle),
+                transform,
+                ChildOf(canopy_id),
+            ))
+            .id();
+
+        mask_mesh::<true>(mask_materials, mesh.clone(), shell_id, commands);
+
+        shell_id
     };
-    let shell_id = commands.spawn(shell_bundle).id();
 
     // load console
-    let console_bundle = {
+    {
         let mesh: Handle<Mesh> =
             asset_server.load(&format!("{cf104_asset_path}#Mesh{}/Primitive0", 2));
         let material_handle = materials.add(StandardMaterial {
@@ -187,17 +229,23 @@ fn load_cf104<const PLAYER: bool>(
             z: -1.4541336297988892,
         };
 
-        (
-            Mesh3d(mesh),
-            MeshMaterial3d(material_handle),
-            transform,
-            ChildOf(shell_id),
+        mask_mesh::<true>(
+            mask_materials,
+            mesh.clone(),
+            commands
+                .spawn((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(material_handle),
+                    transform,
+                    ChildOf(shell_id),
+                ))
+                .id(),
+            commands,
         )
     };
-    commands.spawn(console_bundle);
 
     // load seat
-    let seat_bundle = {
+    {
         let mesh: Handle<Mesh> =
             asset_server.load(&format!("{cf104_asset_path}#Mesh{}/Primitive0", 4));
         // let material_handle = materials.add(StandardMaterial::default());
@@ -216,14 +264,20 @@ fn load_cf104<const PLAYER: bool>(
             z: -1.4541336297988892,
         };
 
-        (
-            Mesh3d(mesh),
-            MeshMaterial3d(material_handle),
-            transform,
-            ChildOf(shell_id),
+        mask_mesh::<true>(
+            mask_materials,
+            mesh.clone(),
+            commands
+                .spawn((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(material_handle),
+                    transform,
+                    ChildOf(shell_id),
+                ))
+                .id(),
+            commands,
         )
     };
-    commands.spawn(seat_bundle);
 
     let seat_back_bundle = {
         let mesh: Handle<Mesh> =
@@ -274,7 +328,7 @@ fn load_cf104<const PLAYER: bool>(
     }
 
     if PLAYER {
-        let camera_bundle = {
+        {
             let mut transform: Transform = Transform::default();
 
             transform.translation = Vec3 {
@@ -284,12 +338,10 @@ fn load_cf104<const PLAYER: bool>(
             };
             transform.rotation = Quat::from_euler(EulerRot::XYZ, FRAC_PI_2, 0., 0.);
 
-            let (camera, sensitivity) = set_up_player_camera();
-
-            (Player, camera, sensitivity, transform, ChildOf(shell_id))
+            set_up_player_camera(commands, transform, images, Some(shell_id));
         };
-        commands.spawn(camera_bundle);
-        let throttle_bundle = {
+
+        {
             let mesh: Handle<Mesh> =
                 asset_server.load(&format!("{cf104_asset_path}#Mesh{}/Primitive0", 5));
             let material_handle = materials.add(StandardMaterial::default());
@@ -305,17 +357,26 @@ fn load_cf104<const PLAYER: bool>(
             transform.rotation = Quat::from_xyzw(0.5193636417388916, 0., 0., 0.8545534610748291);
             transform.scale = Vec3::splat(1.2716500759124756);
 
-            (
-                Throttle::default(),
-                Selectable,
-                Name::new("Throttle"),
-                Mesh3d(mesh),
-                MeshMaterial3d(material_handle),
-                transform,
-                ChildOf(shell_id),
+            mask_mesh::<false>(
+                mask_materials,
+                mesh.clone(),
+                commands
+                    .spawn((
+                        Throttle::default(),
+                        RotRange{
+                            min: Quat::from_xyzw(0.5193636417388916, 0., 0., 0.8545534610748291),
+                            max: Quat::from_xyzw(-0.114098, 0., 0., 0.99347),
+                        },
+                        Name::new("Throttle"),
+                        Mesh3d(mesh.clone()),
+                        MeshMaterial3d(material_handle),
+                        transform,
+                        ChildOf(shell_id),
+                    ))
+                    .id(),
+                commands,
             )
         };
-        commands.spawn(throttle_bundle);
 
         // player
         let joystick_bundle = {
@@ -333,17 +394,23 @@ fn load_cf104<const PLAYER: bool>(
             transform.rotation = Quat::from_xyzw(0.1549355387687683, 0., 0., 0.9879246950149536);
             transform.scale = Vec3::splat(1.2716500759124756);
 
-            (
-                Joystick::default(),
-                Selectable,
-                Name::new("Joystick"),
-                Mesh3d(mesh),
-                MeshMaterial3d(material_handle),
-                transform,
-                ChildOf(shell_id),
+            mask_mesh::<false>(
+                mask_materials,
+                mesh.clone(),
+                commands
+                    .spawn((
+                        Joystick::default(),
+                        RotRange2D::new(Quat::from_xyzw(0.1549355387687683, 0., 0., 0.9879246950149536), Vec2::new(PI / 12., PI / 14.)),
+                        Name::new("Joystick"),
+                        Mesh3d(mesh),
+                        MeshMaterial3d(material_handle),
+                        transform,
+                        ChildOf(shell_id),
+                    ))
+                    .id(),
+                commands,
             )
         };
-        commands.spawn(joystick_bundle);
     }
     body_id
 }
@@ -352,6 +419,15 @@ fn initialize_player(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mask_materials: Res<MaskMaterials>,
+    mut images: ResMut<Assets<Image>>,
 ) {
-    load_cf104::<true>(&mut commands, &asset_server, &mut materials, Some(100.));
+    load_cf104::<true>(
+        &mut commands,
+        &asset_server,
+        &mut materials,
+        &mask_materials,
+        &mut images,
+        Some(100.),
+    );
 }
