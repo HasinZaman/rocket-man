@@ -2,10 +2,9 @@ use std::f32::consts::{FRAC_PI_2, PI};
 
 use bevy::prelude::*;
 
-use crate::player::{
-    Player, Selectable,
-    camera::{MaskMaterials, mask_mesh, set_up_player_camera},
-};
+use crate::{player::{
+    camera::{mask_mesh, set_up_player_camera, MaskMaterials}, Player, Selectable
+}, projectile::PlaneBundle};
 
 // CF104
 #[derive(Component)]
@@ -78,8 +77,15 @@ fn load_cf104<const PLAYER: bool>(
 ) -> Entity {
     let cf104_asset_path = "cf104\\meshes.gltf";
 
+    let body_id = commands.spawn((
+        Player,
+        Plane,
+        PlaneBundle::cf_104(),
+        Transform::default()
+    )).id();
+
     // load body
-    let body_bundle = {
+    let body_id = {
         let parent_mesh_handle: Handle<Mesh> =
             asset_server.load(&format!("{cf104_asset_path}#Mesh{}/Primitive0", 11));
         let parent_material_handle = materials.add(StandardMaterial::default());
@@ -92,15 +98,14 @@ fn load_cf104<const PLAYER: bool>(
 
         transform.scale = Vec3::splat(1.);
 
-        (
-            Player,
-            Plane,
+        commands.spawn((
             Mesh3d(parent_mesh_handle),
             MeshMaterial3d(parent_material_handle),
             transform,
-        )
+            ChildOf(body_id)
+        )).id()
     };
-    let body_id = commands.spawn(body_bundle).id();
+
 
     // load canopy shell
     let canopy_bundle = {
@@ -329,16 +334,24 @@ fn load_cf104<const PLAYER: bool>(
 
     if PLAYER {
         {
-            let mut transform: Transform = Transform::default();
+            let camera_parent = commands.spawn((
+                {
+                    let mut transform: Transform = Transform::default();
 
-            transform.translation = Vec3 {
-                x: 0.,
-                y: -0.65,
-                z: 0.,
-            };
-            transform.rotation = Quat::from_euler(EulerRot::XYZ, FRAC_PI_2, 0., 0.);
+                    transform.translation = Vec3 {
+                        x: 0.,
+                        y: -0.65,
+                        z: 0.,
+                    };
+                    transform.rotation = Quat::from_euler(EulerRot::XYZ, FRAC_PI_2, 0., 0.);
 
-            set_up_player_camera(commands, transform, images, Some(shell_id));
+                    transform
+                },
+                ChildOf(shell_id)
+            )).id();
+            
+
+            set_up_player_camera(commands, Transform::default(), images, Some(camera_parent));
         };
 
         {

@@ -149,15 +149,6 @@ pub fn set_up_player_camera(
 
 pub fn look_camera(
     accumulated_mouse_motion: Res<AccumulatedMouseMotion>,
-    plane_transform: Single<
-        &Transform,
-        (
-            With<Player>,
-            With<Plane>,
-            Without<Camera3d>,
-            Without<CameraSensitivity>,
-        ),
-    >,
     mut cam_query: Query<(&mut Transform, &CameraSensitivity), With<Player>>,
 ) {
     let Ok((mut cam_transform, sensitivity)) = cam_query.single_mut() else {
@@ -172,20 +163,29 @@ pub fn look_camera(
     let delta_yaw = -delta.x * sensitivity.0.x;
     let delta_pitch = -delta.y * sensitivity.0.y;
 
-    let _plane_forward = plane_transform.back();
-    let plane_up = plane_transform.down();
-    let plane_right = plane_transform.left();
+    let (mut pitch, mut yaw, _) = cam_transform.rotation.to_euler(EulerRot::XYZ);
 
-    let yaw_rotation = Quat::from_axis_angle(*plane_right, delta_yaw);
-    let pitch_rotation = Quat::from_axis_angle(*plane_up, delta_pitch);
+    yaw += delta_yaw;
+    pitch += delta_pitch;
 
-    cam_transform.rotation = yaw_rotation * pitch_rotation * cam_transform.rotation;
+    pitch = pitch.clamp(-PI / 3., PI / 3.);
 
-    let (mut yaw, mut pitch, _) = cam_transform.rotation.to_euler(EulerRot::XYZ);
+    yaw = yaw.clamp(-PI/2.-1., PI/2.+1.);
 
-    pitch = pitch.clamp(-1., 1.);
+    cam_transform.rotation = Quat::from_euler(EulerRot::XYZ, pitch, yaw,  0.);
 
-    yaw = yaw.clamp(0.5, 3. * PI / 4.);
+    let mut pos = cam_transform.translation;
 
-    cam_transform.rotation = Quat::from_euler(EulerRot::XYZ, yaw, pitch, 0.);
+    const DX: f32 = -0.3 / (PI/2. - PI/3.);
+    pos.x = match yaw.abs() > PI/3. {
+        false => 0.,
+        true => DX * (yaw - PI/3.)
+    };
+    const DY: f32 = -0.3 / (PI/2. - PI/3.);
+    pos.z = match yaw.abs() > PI/3. {
+        false => 0.,
+        true => DY * (yaw - PI/3.)
+    };
+
+    cam_transform.translation = pos;
 }
