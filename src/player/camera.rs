@@ -170,21 +170,38 @@ pub fn look_camera(
 
     pitch = pitch.clamp(-PI / 3., PI / 3.);
 
-    yaw = yaw.clamp(-PI/2.-1., PI/2.+1.);
+    yaw = yaw.clamp(-PI/2.-0.5, PI/2.+0.5);
 
     cam_transform.rotation = Quat::from_euler(EulerRot::XYZ, pitch, yaw,  0.);
 
     let mut pos = cam_transform.translation;
 
-    const DX: f32 = -0.3 / (PI/2. - PI/3.);
+    const MAX_ANGLE: f32 = PI / 2. + 0.5;
+    const MIN_ANGLE: f32 = PI / 3.;
+    const RANGE: f32 = (MAX_ANGLE - MIN_ANGLE);
+
+    const DX: f32 = -0.3 / RANGE;
+    const DY: f32 = 0.3 / RANGE;
     pos.x = match yaw.abs() > PI/3. {
         false => 0.,
-        true => DX * (yaw - PI/3.)
+        true => {
+            let sign = yaw.signum();
+            let delta = yaw.abs() - MIN_ANGLE;
+            let offset = delta.clamp(0.0, RANGE);
+
+            DX * offset * sign
+        }
     };
-    const DY: f32 = -0.3 / (PI/2. - PI/3.);
+    
     pos.z = match yaw.abs() > PI/3. {
         false => 0.,
-        true => DY * (yaw - PI/3.)
+        true => {
+            let sign = yaw.signum();
+            let delta = yaw.abs() - MIN_ANGLE;
+            let offset = delta.clamp(0.0, RANGE);
+
+            DY * offset * sign
+        }
     };
 
     cam_transform.translation = pos;
