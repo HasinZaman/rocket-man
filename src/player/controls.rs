@@ -1,19 +1,31 @@
 use std::{cmp::min, collections::HashSet};
 
 use bevy::{
-    app::AppExit, camera::Camera3d, ecs::{
+    app::AppExit,
+    camera::Camera3d,
+    ecs::{
         entity::Entity,
         hierarchy::{ChildOf, Children},
         message::{MessageReader, MessageWriter},
         query::{With, Without},
         resource::Resource,
         system::{Commands, Query, Res, ResMut, Single},
-    }, input::{
-        keyboard::{Key, KeyCode, KeyboardInput}, mouse::{MouseButton, MouseButtonInput}, ButtonState
-    }, math::{Ray3d, Vec2}, picking::mesh_picking::ray_cast::{MeshRayCast, MeshRayCastSettings}, time::Time, transform::components::{GlobalTransform, Transform}
+    },
+    input::{
+        ButtonState,
+        keyboard::{Key, KeyCode, KeyboardInput},
+        mouse::{MouseButton, MouseButtonInput},
+    },
+    math::{Ray3d, Vec2},
+    picking::mesh_picking::ray_cast::{MeshRayCast, MeshRayCastSettings},
+    time::Time,
+    transform::components::{GlobalTransform, Transform},
 };
 
-use crate::{cf104::{Joystick, RotRange, RotRange2D, Throttle}, player::{camera::OutlineCamera, Focused, Player, Selectable, Selected}};
+use crate::{
+    cf104::{CanopyDoor, CanopyDoorHandle, Joystick, RotRange, RotRange2D, Throttle},
+    player::{Focused, Player, Selectable, Selected, camera::OutlineCamera},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyState {
@@ -168,7 +180,6 @@ pub fn update_key_bindings(
     bindings.right.update();
 
     for event in reader.read() {
-
         if event.key_code == KeyCode::Escape {
             exit.write(AppExit::Success);
             return;
@@ -208,10 +219,7 @@ pub fn select_tool(
     >,
     mut raycast: MeshRayCast,
 
-    mut selectable_query: Query<
-        (Entity, &ChildOf, Option<&Selected>),
-        (With<Selectable>),
-    >,
+    mut selectable_query: Query<(Entity, &ChildOf, Option<&Selected>), (With<Selectable>)>,
 
     remove_query: Query<&Children, (With<Selected>, Without<Selectable>)>,
 ) {
@@ -236,10 +244,11 @@ pub fn select_tool(
                 }
             })
         {
-            if let Ok((entity, ChildOf(parent_entity), _selected)) = selectable_query.get_mut(entity) {
+            if let Ok((entity, ChildOf(parent_entity), _selected)) =
+                selectable_query.get_mut(entity)
+            {
                 commands.entity(entity).insert(Selected);
                 commands.entity(*parent_entity).insert(Selected);
-
 
                 match (button, &mut *arms) {
                     (MouseButton::Left, Arms(Some(holding), other))
@@ -252,11 +261,10 @@ pub fn select_tool(
                                 for child in children {
                                     println!("child: {child:?}");
                                     commands.entity(*child).remove::<Selected>();
-                                };
+                                }
                             };
                         }
                         *holding = *parent_entity;
-
                     }
                     (MouseButton::Left, Arms(arm, _)) | (MouseButton::Right, Arms(_, arm)) => {
                         *arm = Some(*parent_entity);
@@ -271,7 +279,6 @@ pub fn select_tool(
     }
 }
 
-
 pub fn throttle_controller(
     arms: Res<Arms>,
     keybindings: Res<KeyBindings>,
@@ -282,18 +289,30 @@ pub fn throttle_controller(
 
     let delta_time = time.delta_secs();
 
-
     for (entity, mut throttle, range, mut transform) in &mut query {
-        
-        let keybindings: &ArmBinding = match arms.0 == Some(entity) {
-            true => &keybindings.left,
-            false => &keybindings.right
-        };
+        let holding = (arms.0 == Some(entity), arms.1 == Some(entity));
 
-        if keybindings.up.state == KeyState::Held || keybindings.up.state == KeyState::Pressed {
-            throttle.0 = f32::min(100.0, throttle.0 + DELTA * delta_time);
-        } else if keybindings.down.state == KeyState::Held || keybindings.down.state == KeyState::Pressed {
-            throttle.0 = f32::max(0.0, throttle.0 - DELTA * delta_time);
+        match (
+            (
+                keybindings.left.up.state,
+                keybindings.left.down.state,
+                holding.0,
+            ),
+            (
+                keybindings.right.up.state,
+                keybindings.right.down.state,
+                holding.1,
+            ),
+        ) {
+            ((KeyState::Held | KeyState::Pressed, _, true), _)
+            | (_, (KeyState::Held | KeyState::Pressed, _, true)) => {
+                throttle.0 = f32::min(100.0, throttle.0 + DELTA * delta_time);
+            }
+            ((_, KeyState::Held | KeyState::Pressed, true), _)
+            | (_, (_, KeyState::Held | KeyState::Pressed, true)) => {
+                throttle.0 = f32::max(0.0, throttle.0 - DELTA * delta_time);
+            }
+            _ => {}
         }
 
         let t = throttle.0 / 100.0;
@@ -301,7 +320,6 @@ pub fn throttle_controller(
         let target_rotation = range.min.slerp(range.max, t);
 
         transform.rotation = transform.rotation.slerp(target_rotation, 0.15);
-
     }
 }
 
@@ -311,35 +329,50 @@ pub fn joystick_controller(
     time: Res<Time>,
     mut query: Query<(Entity, &mut Joystick, &RotRange2D, &mut Transform), With<Selected>>,
 ) {
-    const RETURN_SPEED: f32 = 0.9
-    ;
+    const RETURN_SPEED: f32 = 0.9;
     const INPUT_SPEED: f32 = 1.0;
 
     for (entity, mut joystick, range, mut transform) in &mut query {
         let holding = (arms.0 == Some(entity), arms.1 == Some(entity));
         let mut input = Vec2::ZERO;
-        match ((keybindings.left.up.state, holding.0), (keybindings.right.up.state, holding.1)) {
-            ((KeyState::Held | KeyState::Pressed, true), _) | (_, (KeyState::Held | KeyState::Pressed, true)) => {
+        match (
+            (keybindings.left.up.state, holding.0),
+            (keybindings.right.up.state, holding.1),
+        ) {
+            ((KeyState::Held | KeyState::Pressed, true), _)
+            | (_, (KeyState::Held | KeyState::Pressed, true)) => {
                 input.y -= 1.0;
-            },
+            }
             _ => {}
         };
-        match ((keybindings.left.down.state, holding.0), (keybindings.right.down.state, holding.1)) {
-            ((KeyState::Held | KeyState::Pressed, true), _) | (_, (KeyState::Held | KeyState::Pressed, true)) => {
+        match (
+            (keybindings.left.down.state, holding.0),
+            (keybindings.right.down.state, holding.1),
+        ) {
+            ((KeyState::Held | KeyState::Pressed, true), _)
+            | (_, (KeyState::Held | KeyState::Pressed, true)) => {
                 input.y += 1.0;
-            },
+            }
             _ => {}
         };
-        match ((keybindings.left.left.state, holding.0), (keybindings.right.left.state, holding.1)) {
-            ((KeyState::Held | KeyState::Pressed, true), _) | (_, (KeyState::Held | KeyState::Pressed, true)) => {
+        match (
+            (keybindings.left.left.state, holding.0),
+            (keybindings.right.left.state, holding.1),
+        ) {
+            ((KeyState::Held | KeyState::Pressed, true), _)
+            | (_, (KeyState::Held | KeyState::Pressed, true)) => {
                 input.x -= 1.0;
-            },
+            }
             _ => {}
         };
-        match ((keybindings.left.right.state, holding.0), (keybindings.right.right.state, holding.1)) {
-            ((KeyState::Held | KeyState::Pressed, true), _) | (_, (KeyState::Held | KeyState::Pressed, true)) => {
+        match (
+            (keybindings.left.right.state, holding.0),
+            (keybindings.right.right.state, holding.1),
+        ) {
+            ((KeyState::Held | KeyState::Pressed, true), _)
+            | (_, (KeyState::Held | KeyState::Pressed, true)) => {
                 input.x += 1.0;
-            },
+            }
             _ => {}
         };
 
@@ -357,6 +390,72 @@ pub fn joystick_controller(
         }
 
         let target_rotation = range.to_quat(joystick.0);
+        transform.rotation = transform.rotation.slerp(target_rotation, 0.15);
+    }
+}
+
+pub fn canopy_door_controller(
+    time: Res<Time>,
+    arms: Res<Arms>,
+    keybindings: Res<KeyBindings>,
+    mut doors: Query<(&mut CanopyDoor, &RotRange, &mut Transform)>,
+    mut handles: Query<(Entity, &ChildOf), (With<CanopyDoorHandle>, With<Selected>)>,
+    mut commands: Commands,
+) {
+    const DELTA: f32 = 75.0;
+
+    let delta_time = time.delta_secs();
+
+    for (entity, ChildOf(door_entity)) in &mut handles {
+        let holding = (arms.0 == Some(entity), arms.1 == Some(entity));
+
+        let (mut door, range, mut transform) = doors.get_mut(*door_entity).unwrap();
+
+        match (
+            (
+                keybindings.left.up.state,
+                keybindings.left.down.state,
+                holding.0,
+            ),
+            (
+                keybindings.right.up.state,
+                keybindings.right.down.state,
+                holding.1,
+            ),
+        ) {
+            (
+                (KeyState::Held | KeyState::Pressed, KeyState::None | KeyState::Released, true),
+                _,
+            )
+            | (
+                _,
+                (KeyState::Held | KeyState::Pressed, KeyState::None | KeyState::Released, true),
+            ) => {
+                door.0 = f32::min(100.0, door.0 + DELTA * delta_time);
+            }
+            (
+                (KeyState::None | KeyState::Released, KeyState::Held | KeyState::Pressed, true),
+                _,
+            )
+            | (
+                _,
+                (KeyState::None | KeyState::Released, KeyState::Held | KeyState::Pressed, true),
+            ) => {
+                door.0 = f32::max(0.0, door.0 - DELTA * delta_time);
+            }
+            _ => {}
+        };
+
+        if door.0 <= 0.001 {
+            door.0 = 0.;
+
+            commands.entity(entity).remove::<CanopyDoorHandle>();
+        }
+
+        let t = door.0 / 100.0;
+
+        let target_rotation = range.min.slerp(range.max, t);
+
         transform.rotation = transform.rotation.slerp(target_rotation, 0.15);
     }
 }
