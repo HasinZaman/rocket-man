@@ -1,7 +1,6 @@
+use bevy::prelude::*;
 use bevy::ui::{Node, PositionType};
 use bevy::window::{CursorOptions, PrimaryWindow, WindowMode};
-use bevy::{prelude::*};
-
 
 pub fn fullscreen_startup(mut window: Single<&mut Window, With<PrimaryWindow>>) {
     window.mode = WindowMode::BorderlessFullscreen(MonitorSelection::Current);

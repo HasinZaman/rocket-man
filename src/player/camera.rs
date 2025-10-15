@@ -1,14 +1,18 @@
 use crate::cf104::Plane;
+use crate::player::controls::{KeyBindings, KeyState};
 use crate::player::{Player, Selectable};
 use bevy::camera::RenderTarget;
+use bevy::camera::primitives::CubeMapFace;
 use bevy::camera::visibility::RenderLayers;
-use bevy::input::mouse::AccumulatedMouseMotion;
+use bevy::core_pipeline::Skybox;
+use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseWheel};
 use bevy::prelude::*;
 use bevy::render::render_resource::{
     Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
 };
 use std::default;
-use std::f32::consts::PI;
+use std::f32::consts::{FRAC_PI_2, FRAC_PI_3, FRAC_PI_4, PI};
+use std::ops::DerefMut;
 
 #[derive(Component)]
 pub struct OutlineCamera;
@@ -78,16 +82,28 @@ impl Default for CameraSensitivity {
 pub fn set_up_player_camera(
     commands: &mut Commands,
     transform: Transform,
+    asset_server: &Res<AssetServer>,
     images: &mut ResMut<Assets<Image>>,
     parent: Option<Entity>,
 ) -> Entity {
     let (camera, sensitivity) = (Camera3d::default(), CameraSensitivity::default());
 
+    // let cube_handle = images.add(cubemap);
+
+    // let skybox_handle: Handle<Image> = asset_server.load("sky_box/Ryfjallet_cubemap_astc4x4.ktx2");
+
+    let audio_listener = SpatialListener::new(0.18);
     let camera_id = match parent {
         Some(parent_id) => commands
             .spawn((
                 Player,
                 camera,
+                // Skybox {
+                //     image: skybox_handle.clone(),
+                //     brightness: 1000.0,
+                //     ..default()
+                // },
+                audio_listener,
                 sensitivity,
                 transform,
                 RenderLayers::layer(0),
@@ -98,6 +114,12 @@ pub fn set_up_player_camera(
             .spawn((
                 Player,
                 camera,
+                // Skybox {
+                //     image: skybox_handle.clone(),
+                //     brightness: 1000.0,
+                //     ..default()
+                // },
+                audio_listener,
                 sensitivity,
                 transform,
                 RenderLayers::layer(0),
@@ -149,11 +171,26 @@ pub fn set_up_player_camera(
 
 pub fn look_camera(
     accumulated_mouse_motion: Res<AccumulatedMouseMotion>,
-    mut cam_query: Query<(&mut Transform, &CameraSensitivity), With<Player>>,
+    key_bindings: Res<KeyBindings>,
+    mut cam_query: Query<(&mut Transform, &mut Projection, &CameraSensitivity), With<Player>>,
 ) {
-    let Ok((mut cam_transform, sensitivity)) = cam_query.single_mut() else {
+    let Ok((mut cam_transform, mut projection, sensitivity)) = cam_query.single_mut() else {
         return;
     };
+
+    let zoom_in =
+        key_bindings.zoom.state == KeyState::Held || key_bindings.zoom.state == KeyState::Pressed;
+
+    // put this into a res and let a diffrent sytem handle FOV
+    const DEFAULT_FOV: f32 = FRAC_PI_3;
+    const ZOOMED_FOV: f32 = PI / 10.;
+    if let Projection::Perspective(ref mut perspective) = *projection {
+        if zoom_in {
+            perspective.fov = ZOOMED_FOV;
+        } else {
+            perspective.fov = DEFAULT_FOV;
+        }
+    }
 
     let delta = accumulated_mouse_motion.delta;
     if delta == Vec2::ZERO {
@@ -170,9 +207,9 @@ pub fn look_camera(
 
     pitch = pitch.clamp(-PI / 3., PI / 3.);
 
-    yaw = yaw.clamp(-PI/2.-0.5, PI/2.+0.5);
+    yaw = yaw.clamp(-PI / 2. - 0.5, PI / 2. + 0.5);
 
-    cam_transform.rotation = Quat::from_euler(EulerRot::XYZ, pitch, yaw,  0.);
+    cam_transform.rotation = Quat::from_euler(EulerRot::XYZ, pitch, yaw, 0.);
 
     let mut pos = cam_transform.translation;
 
@@ -182,7 +219,7 @@ pub fn look_camera(
 
     const DX: f32 = -0.3 / RANGE;
     const DY: f32 = 0.3 / RANGE;
-    pos.x = match yaw.abs() > PI/3. {
+    pos.x = match yaw.abs() > PI / 3. {
         false => 0.,
         true => {
             let sign = yaw.signum();
@@ -192,8 +229,8 @@ pub fn look_camera(
             DX * offset * sign
         }
     };
-    
-    pos.z = match yaw.abs() > PI/3. {
+
+    pos.z = match yaw.abs() > PI / 3. {
         false => 0.,
         true => {
             let sign = yaw.signum();

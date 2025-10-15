@@ -3,6 +3,7 @@ use std::{cmp::min, collections::HashSet};
 use bevy::{
     app::AppExit,
     camera::Camera3d,
+    color::{Color, LinearRgba},
     ecs::{
         entity::Entity,
         hierarchy::{ChildOf, Children},
@@ -11,6 +12,7 @@ use bevy::{
         resource::Resource,
         system::{Commands, Query, Res, ResMut, Single},
     },
+    gizmos::gizmos::Gizmos,
     input::{
         ButtonState,
         keyboard::{Key, KeyCode, KeyboardInput},
@@ -23,8 +25,12 @@ use bevy::{
 };
 
 use crate::{
-    cf104::{CanopyDoor, CanopyDoorHandle, Joystick, RotRange, RotRange2D, Throttle},
+    cf104::{
+        CanopyDoor, CanopyDoorHandle, Joystick, RotRange2D,
+        console::{RotRange, throttle::Throttle},
+    },
     player::{Focused, Player, Selectable, Selected, camera::OutlineCamera},
+    projectile::{BrakeForce, Grounded, Projectile, SteeringWheel},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -142,16 +148,59 @@ impl ArmBinding {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct FeetBinding {
+    pub left: KeyBinding,
+    pub right: KeyBinding,
+}
+
+impl FeetBinding {
+    pub fn pressed(&mut self, key_code: KeyCode) {
+        if self.left.key == key_code {
+            self.left.state = KeyState::Pressed;
+        }
+        if self.right.key == key_code {
+            self.right.state = KeyState::Pressed;
+        }
+    }
+
+    pub fn released(&mut self, key_code: KeyCode) {
+        if self.left.key == key_code {
+            self.left.state = KeyState::Released;
+        }
+        if self.right.key == key_code {
+            self.right.state = KeyState::Released;
+        }
+    }
+
+    pub fn update(&mut self) {
+        self.left.state = match self.left.state {
+            KeyState::Pressed => KeyState::Held,
+            KeyState::Held => KeyState::Held,
+            KeyState::Released => KeyState::None,
+            KeyState::None => KeyState::None,
+        };
+        self.right.state = match self.right.state {
+            KeyState::Pressed => KeyState::Held,
+            KeyState::Held => KeyState::Held,
+            KeyState::Released => KeyState::None,
+            KeyState::None => KeyState::None,
+        };
+    }
+}
+
 #[derive(Resource, Debug)]
 pub struct KeyBindings {
-    pub left: ArmBinding,
-    pub right: ArmBinding,
+    pub left_arm: ArmBinding,
+    pub right_arm: ArmBinding,
+    pub feet: FeetBinding,
+    pub zoom: KeyBinding,
 }
 
 impl Default for KeyBindings {
     fn default() -> Self {
         Self {
-            left: ArmBinding {
+            left_arm: ArmBinding {
                 up: KeyBinding::new(KeyCode::KeyW),
                 down: KeyBinding::new(KeyCode::KeyS),
                 left: KeyBinding::new(KeyCode::KeyA),
@@ -159,7 +208,7 @@ impl Default for KeyBindings {
                 alt_1: KeyBinding::new(KeyCode::KeyQ),
                 alt_2: KeyBinding::new(KeyCode::KeyE),
             },
-            right: ArmBinding {
+            right_arm: ArmBinding {
                 up: KeyBinding::new(KeyCode::KeyI),
                 down: KeyBinding::new(KeyCode::KeyK),
                 left: KeyBinding::new(KeyCode::KeyJ),
@@ -167,6 +216,11 @@ impl Default for KeyBindings {
                 alt_1: KeyBinding::new(KeyCode::KeyU),
                 alt_2: KeyBinding::new(KeyCode::KeyO),
             },
+            feet: FeetBinding {
+                left: KeyBinding::new(KeyCode::KeyC),
+                right: KeyBinding::new(KeyCode::KeyN),
+            },
+            zoom: KeyBinding::new(KeyCode::Space),
         }
     }
 }
@@ -176,8 +230,15 @@ pub fn update_key_bindings(
     mut bindings: ResMut<KeyBindings>,
     mut exit: MessageWriter<AppExit>,
 ) {
-    bindings.left.update();
-    bindings.right.update();
+    bindings.left_arm.update();
+    bindings.right_arm.update();
+    bindings.feet.update();
+    bindings.zoom.state = match bindings.zoom.state {
+        KeyState::Pressed => KeyState::Held,
+        KeyState::Held => KeyState::Held,
+        KeyState::Released => KeyState::None,
+        KeyState::None => KeyState::None,
+    };
 
     for event in reader.read() {
         if event.key_code == KeyCode::Escape {
@@ -186,12 +247,22 @@ pub fn update_key_bindings(
         }
         match event.state {
             ButtonState::Pressed => {
-                bindings.left.pressed(event.key_code);
-                bindings.right.pressed(event.key_code);
+                bindings.left_arm.pressed(event.key_code);
+                bindings.right_arm.pressed(event.key_code);
+                bindings.feet.pressed(event.key_code);
+
+                if event.key_code == bindings.zoom.key {
+                    bindings.zoom.state = KeyState::Pressed;
+                }
             }
             ButtonState::Released => {
-                bindings.left.released(event.key_code);
-                bindings.right.released(event.key_code);
+                bindings.left_arm.released(event.key_code);
+                bindings.right_arm.released(event.key_code);
+                bindings.feet.released(event.key_code);
+
+                if event.key_code == bindings.zoom.key {
+                    bindings.zoom.state = KeyState::Released;
+                }
             }
         }
 
@@ -222,6 +293,8 @@ pub fn select_tool(
     mut selectable_query: Query<(Entity, &ChildOf, Option<&Selected>), (With<Selectable>)>,
 
     remove_query: Query<&Children, (With<Selected>, Without<Selectable>)>,
+
+    mut gizmos: Gizmos, // add gizmos resource
 ) {
     // TODO - check if in play mode
     for event in mouse_button_events.read() {
@@ -231,8 +304,12 @@ pub fn select_tool(
 
         let button = event.button;
 
-        let ray: Ray3d = Ray3d::new(camera_transform.translation(), camera_transform.forward());
+        let origin = camera_transform.translation();
+        let dir = camera_transform.forward();
+        let ray: Ray3d = Ray3d::new(origin, dir);
+        let end = origin + dir * 50.0;
 
+        gizmos.line(origin, end, Color::LinearRgba(LinearRgba::RED));
         if let Some((entity, hit)) = raycast
             .cast_ray(ray, &MeshRayCastSettings::default())
             .iter()
@@ -279,6 +356,42 @@ pub fn select_tool(
     }
 }
 
+pub fn grounded_controller(
+    keybindings: Res<KeyBindings>,
+    mut plane: Single<(&mut BrakeForce, &mut SteeringWheel), (With<Player>, With<Grounded>)>,
+) {
+    let (brake_force, wheel) = &mut *plane;
+
+    let left_pressed = matches!(
+        keybindings.feet.left.state,
+        KeyState::Pressed | KeyState::Held
+    );
+    let right_pressed = matches!(
+        keybindings.feet.right.state,
+        KeyState::Pressed | KeyState::Held
+    );
+
+    match (left_pressed, right_pressed) {
+        (true, true) => {
+            // Both pedals pressed: full brake
+            brake_force.1 = true;
+            wheel.input_dir = 0.0;
+        }
+        (true, false) => {
+            brake_force.1 = false;
+            wheel.input_dir = -1.0;
+        }
+        (false, true) => {
+            brake_force.1 = false;
+            wheel.input_dir = 1.0;
+        }
+        _ => {
+            brake_force.1 = false;
+            wheel.input_dir = 0.0;
+        }
+    }
+}
+
 pub fn throttle_controller(
     arms: Res<Arms>,
     keybindings: Res<KeyBindings>,
@@ -294,13 +407,13 @@ pub fn throttle_controller(
 
         match (
             (
-                keybindings.left.up.state,
-                keybindings.left.down.state,
+                keybindings.left_arm.up.state,
+                keybindings.left_arm.down.state,
                 holding.0,
             ),
             (
-                keybindings.right.up.state,
-                keybindings.right.down.state,
+                keybindings.right_arm.up.state,
+                keybindings.right_arm.down.state,
                 holding.1,
             ),
         ) {
@@ -336,8 +449,8 @@ pub fn joystick_controller(
         let holding = (arms.0 == Some(entity), arms.1 == Some(entity));
         let mut input = Vec2::ZERO;
         match (
-            (keybindings.left.up.state, holding.0),
-            (keybindings.right.up.state, holding.1),
+            (keybindings.left_arm.up.state, holding.0),
+            (keybindings.right_arm.up.state, holding.1),
         ) {
             ((KeyState::Held | KeyState::Pressed, true), _)
             | (_, (KeyState::Held | KeyState::Pressed, true)) => {
@@ -346,8 +459,8 @@ pub fn joystick_controller(
             _ => {}
         };
         match (
-            (keybindings.left.down.state, holding.0),
-            (keybindings.right.down.state, holding.1),
+            (keybindings.left_arm.down.state, holding.0),
+            (keybindings.right_arm.down.state, holding.1),
         ) {
             ((KeyState::Held | KeyState::Pressed, true), _)
             | (_, (KeyState::Held | KeyState::Pressed, true)) => {
@@ -356,8 +469,8 @@ pub fn joystick_controller(
             _ => {}
         };
         match (
-            (keybindings.left.left.state, holding.0),
-            (keybindings.right.left.state, holding.1),
+            (keybindings.left_arm.left.state, holding.0),
+            (keybindings.right_arm.left.state, holding.1),
         ) {
             ((KeyState::Held | KeyState::Pressed, true), _)
             | (_, (KeyState::Held | KeyState::Pressed, true)) => {
@@ -366,8 +479,8 @@ pub fn joystick_controller(
             _ => {}
         };
         match (
-            (keybindings.left.right.state, holding.0),
-            (keybindings.right.right.state, holding.1),
+            (keybindings.left_arm.right.state, holding.0),
+            (keybindings.right_arm.right.state, holding.1),
         ) {
             ((KeyState::Held | KeyState::Pressed, true), _)
             | (_, (KeyState::Held | KeyState::Pressed, true)) => {
@@ -413,13 +526,13 @@ pub fn canopy_door_controller(
 
         match (
             (
-                keybindings.left.up.state,
-                keybindings.left.down.state,
+                keybindings.left_arm.up.state,
+                keybindings.left_arm.down.state,
                 holding.0,
             ),
             (
-                keybindings.right.up.state,
-                keybindings.right.down.state,
+                keybindings.right_arm.up.state,
+                keybindings.right_arm.down.state,
                 holding.1,
             ),
         ) {

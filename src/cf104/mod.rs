@@ -1,33 +1,29 @@
-use std::f32::consts::{FRAC_PI_2, PI};
+use std::f32::consts::{FRAC_PI_2, FRAC_PI_6, FRAC_PI_8, PI, TAU};
 
 use bevy::{audio::Volume, camera::visibility::NoFrustumCulling, prelude::*, time::Stopwatch};
 
 use crate::{
+    cf104::console::{
+        ConsolePlugin, RotRange,
+        altimeter::spawn_altimeter,
+        clock::spawn_clock,
+        gyro_compass::spawn_gyro_compass,
+        radio::spawn_radio,
+        speedometer::spawn_speedometer,
+        throttle::{Throttle, spawn_throttle},
+    },
     player::{
         Player, Selectable,
         camera::{MaskMaterials, mask_mesh, set_up_player_camera},
     },
-    projectile::PlaneBundle,
+    projectile::{Grounded, GroundedBundle, PlaneBundle, Velocity},
 };
+
+pub mod console;
 
 // CF104
 #[derive(Component)]
 pub struct Plane;
-
-#[derive(Component)]
-pub struct Throttle(pub f32);
-
-impl Default for Throttle {
-    fn default() -> Self {
-        Self(0.)
-    }
-}
-
-#[derive(Component)]
-pub struct RotRange {
-    pub min: Quat,
-    pub max: Quat,
-}
 
 #[derive(Component)]
 pub struct Joystick(pub Vec2);
@@ -132,11 +128,11 @@ impl EngineAudio {
             let throttle_factor = (throttle.0 / 100.0).clamp(0.0, 1.0);
 
             let min_volume = match cockpit_closed {
-                true => 20.0,
+                true => 10.0,
                 false => 30.0,
             };
             let max_volume = match cockpit_closed {
-                true => 40.0,
+                true => 30.0,
                 false => 50.0,
             };
 
@@ -148,9 +144,7 @@ impl EngineAudio {
                             .clamp(0.0, 1.0);
                         min_volume + (max_volume - min_volume) * spool_factor
                     }
-                    false => {
-                        min_volume + (max_volume - min_volume) * throttle_factor
-                    }
+                    false => min_volume + (max_volume - min_volume) * throttle_factor,
                 };
 
             if audio_sink.volume() != Volume::Linear(target_volume) {
@@ -176,28 +170,40 @@ impl EngineAudio {
 pub struct CF104Plugin;
 impl Plugin for CF104Plugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, initialize_player).add_systems(
-            Update,
-            (EngineAudio::start_up_engine, EngineAudio::update_sound),
-        );
+        app.add_plugins(ConsolePlugin)
+            .add_systems(Startup, initialize_player)
+            .add_systems(
+                Update,
+                (EngineAudio::start_up_engine, EngineAudio::update_sound),
+            );
     }
 }
 
+pub(crate) const CF104_BODY_ASSET_PATH: &'static str = "cf104\\meshes.gltf";
+pub(crate) const CF104_CONSOLE_ASSET_PATH: &'static str = "cf104\\cf104_console_accessories.gltf";
+pub(crate) const CF104_DOOR_ASSET_PATH: &'static str = "cf104\\cf104_door_accessories.gltf";
+
 fn load_cf104<const PLAYER: bool>(
+    transform: Transform,
+
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
 
     mask_materials: &Res<MaskMaterials>,
+    mut meshes: ResMut<Assets<Mesh>>,
     images: &mut ResMut<Assets<Image>>,
 
     tip_fuel_tanks: Option<f32>,
 ) -> Entity {
-    const CF104_BODY_ASSET_PATH: &'static str = "cf104\\meshes.gltf";
-    const CF104_DOOR_ASSET_PATH: &'static str = "cf104\\cf104_door_accessories.gltf";
-
     let body_id = commands
-        .spawn((Player, Plane, PlaneBundle::cf_104(), Transform::default()))
+        .spawn((
+            Player,
+            Plane,
+            GroundedBundle::cf_104(),
+            PlaneBundle::cf_104(),
+            transform,
+        ))
         .id();
 
     // load body
@@ -237,6 +243,7 @@ fn load_cf104<const PLAYER: bool>(
             transform,
             EngineAudio::new(asset_server),
             PlaybackSettings::LOOP.with_spatial(true),
+            ChildOf(body_id),
         ));
     }
 
@@ -432,38 +439,193 @@ fn load_cf104<const PLAYER: bool>(
 
     // load console
     {
-        let mesh: Handle<Mesh> =
-            asset_server.load(&format!("{CF104_BODY_ASSET_PATH}#Mesh{}/Primitive0", 2));
-        let material_handle = materials.add(StandardMaterial {
+        let console_material = materials.add(StandardMaterial {
             base_color: Color::srgb(0.1, 0.1, 0.1),
             cull_mode: None,
             ..default()
         });
+        let glass_material = materials.add(StandardMaterial {
+            base_color: Color::linear_rgba(
+                0.800000011920929,
+                0.800000011920929,
+                0.800000011920929,
+                0.05,
+            ),
+            alpha_mode: AlphaMode::Blend,
+            ..default()
+        });
+        let needle_material_handle = materials.add(StandardMaterial {
+            base_color: Color::srgb(1.0, 1.0, 1.0),
+            emissive: LinearRgba {
+                red: 1.,
+                green: 1.,
+                blue: 1.,
+                alpha: 1.,
+            }, // intensity multiplier
+            ..default()
+        });
 
-        // let material_handle = materials.add(StandardMaterial::default());
+        let console_id = {
+            let mesh: Handle<Mesh> =
+                asset_server.load(&format!("{CF104_CONSOLE_ASSET_PATH}#Mesh{}/Primitive0", 31));
+            let material_handle = console_material.clone();
 
-        let mut transform = Transform::default();
+            // let material_handle = materials.add(StandardMaterial::default());
 
-        transform.translation = Vec3 {
-            x: 0.,
-            y: 2.062485694885254,
-            z: -1.4541336297988892,
-        };
+            let mut transform = Transform::default();
 
-        mask_mesh::<true>(
-            mask_materials,
-            mesh.clone(),
-            commands
+            transform.translation = Vec3 {
+                x: 0.,
+                y: 2.062485694885254,
+                z: -1.4541336297988892,
+            };
+
+            let console_id = commands
                 .spawn((
-                    Mesh3d(mesh),
-                    MeshMaterial3d(material_handle),
+                    Mesh3d(mesh.clone()),
+                    MeshMaterial3d(material_handle.clone()),
+                    // Visibility::Visible,
                     NoFrustumCulling,
                     transform,
                     ChildOf(shell_id),
                 ))
-                .id(),
-            commands,
-        )
+                .id();
+
+            mask_mesh::<true>(mask_materials, mesh.clone(), console_id, commands);
+
+            console_id
+        };
+        if PLAYER {
+            // radio
+            {
+                let mut transform = Transform::default();
+                transform.translation = Vec3 {
+                    x: -0.35561704635620117,
+                    y: -1.5650274753570557,
+                    z: 0.910442054271698,
+                };
+
+                spawn_radio::<26, 24, 25>(
+                    transform,
+                    commands,
+                    asset_server,
+                    materials,
+                    mask_materials,
+                    &console_material,
+                    console_id,
+                );
+            }
+
+            // clock
+            {
+                let mut transform = Transform::default();
+                transform.translation = Vec3 {
+                    x: 0.,
+                    y: -0.0012316405773162842,
+                    z: 0.,
+                };
+
+                spawn_clock::<7, 8, 10, 11, 6, 9>(
+                    transform,
+                    commands,
+                    asset_server,
+                    materials,
+                    &console_material,
+                    &glass_material,
+                    &needle_material_handle,
+                    console_id,
+                );
+            }
+
+            // compass gyro ball
+            {
+                let mut transform = Transform::default();
+                transform.scale = Vec3::splat(1.5779876708984375);
+                transform.translation = Vec3 {
+                    x: -0.03270721435546875,
+                    y: -1.5688923597335815,
+                    z: 1.020938754081726,
+                };
+
+                spawn_gyro_compass::<14, 13, 12>(
+                    transform,
+                    commands,
+                    asset_server,
+                    materials,
+                    &console_material,
+                    &glass_material,
+                    console_id,
+                );
+            }
+
+            // altimeter
+            {
+                let mut transform = Transform::default();
+                transform.scale = Vec3::splat(0.8027474284172058);
+                transform.translation = Vec3 {
+                    x: -0.21370697021484375,
+                    y: -1.5688923597335815,
+                    z: 0.9261799454689026,
+                };
+                spawn_altimeter::<0, 1, 2, 3, 5>(
+                    transform,
+                    commands,
+                    asset_server,
+                    materials,
+                    &needle_material_handle,
+                    console_id,
+                );
+            }
+
+            // speedometer
+            {
+                let mut transform = Transform::default();
+                transform.scale = Vec3::splat(0.8027474284172058);
+                transform.translation = Vec3 {
+                    x: -0.21204900741577148,
+                    y: -1.5688923597335815,
+                    z: 1.0485676527023315,
+                };
+
+                spawn_speedometer::<30, 29, 28, 27>(
+                    transform,
+                    commands,
+                    asset_server,
+                    materials,
+                    console_material,
+                    glass_material,
+                    needle_material_handle,
+                    console_id,
+                );
+            }
+        }
+
+        let tmp = Vec3 {
+            x: -0.2562694549560547,
+            y: -1.5931899547576904,
+            z: 1.1498485803604126,
+        };
+        commands.spawn((
+            PointLight {
+                intensity: 500.0,
+                color: Color::Srgba(Srgba {
+                    red: 1.,
+                    green: 0.,
+                    blue: 0.,
+                    alpha: 1.,
+                }),
+                shadows_enabled: true,
+                ..default()
+            },
+            {
+                let mut transform = Transform::default();
+
+                transform.translation = tmp.clone();
+
+                transform
+            },
+            ChildOf(console_id),
+        ));
     };
 
     // load seat
@@ -523,6 +685,7 @@ fn load_cf104<const PLAYER: bool>(
             ChildOf(shell_id),
         )
     };
+
     commands.spawn(seat_back_bundle);
 
     if let Some(fuel_level) = tip_fuel_tanks {
@@ -572,14 +735,16 @@ fn load_cf104<const PLAYER: bool>(
                 ))
                 .id();
 
-            set_up_player_camera(commands, Transform::default(), images, Some(camera_parent));
+            set_up_player_camera(
+                commands,
+                Transform::default(),
+                &asset_server,
+                images,
+                Some(camera_parent),
+            );
         };
 
         {
-            let mesh: Handle<Mesh> =
-                asset_server.load(&format!("{CF104_BODY_ASSET_PATH}#Mesh{}/Primitive0", 5));
-            let material_handle = materials.add(StandardMaterial::default());
-
             let mut transform: Transform = Transform::default();
 
             transform.translation = Vec3 {
@@ -591,27 +756,15 @@ fn load_cf104<const PLAYER: bool>(
             transform.rotation = Quat::from_xyzw(0.5193636417388916, 0., 0., 0.8545534610748291);
             transform.scale = Vec3::splat(1.2716500759124756);
 
-            mask_mesh::<false>(
-                mask_materials,
-                mesh.clone(),
-                commands
-                    .spawn((
-                        Throttle::default(),
-                        RotRange {
-                            min: Quat::from_xyzw(0.5193636417388916, 0., 0., 0.8545534610748291),
-                            max: Quat::from_xyzw(-0.114098, 0., 0., 0.99347),
-                        },
-                        Name::new("Throttle"),
-                        Mesh3d(mesh.clone()),
-                        NoFrustumCulling,
-                        MeshMaterial3d(material_handle),
-                        transform,
-                        ChildOf(shell_id),
-                    ))
-                    .id(),
+            spawn_throttle::<5>(
+                transform,
                 commands,
-            )
-        };
+                asset_server,
+                materials,
+                mask_materials,
+                shell_id,
+            );
+        }
 
         // player
         let joystick_bundle = {
@@ -649,6 +802,11 @@ fn load_cf104<const PLAYER: bool>(
                 commands,
             )
         };
+
+        // console dials
+        {
+            //CF104_CONSOLE_ASSET_PATH
+        }
     }
     body_id
 }
@@ -657,14 +815,28 @@ fn initialize_player(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
     mask_materials: Res<MaskMaterials>,
     mut images: ResMut<Assets<Image>>,
 ) {
     load_cf104::<true>(
+        {
+            let mut transform = Transform::default();
+            transform.translation = Vec3 {
+                x: 39.25777053833008,
+                y: 2.,
+                z: 169.4016571044922,
+            };
+
+            transform.rotation = Quat::from_euler(EulerRot::XYZ, 0., -PI / 2., 0.);
+
+            transform
+        },
         &mut commands,
         &asset_server,
         &mut materials,
         &mask_materials,
+        meshes,
         &mut images,
         Some(100.),
     );

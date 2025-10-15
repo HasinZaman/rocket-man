@@ -1,56 +1,110 @@
-use bevy::{ecs::{bundle::Bundle, component::Component, query::With, system::{Query, Res}}, math::{Quat, Vec2, Vec3}, prelude::{Deref, DerefMut}, time::Time, transform::components::Transform};
+use std::{
+    f32::consts::{FRAC_PI_4, PI},
+    process::Command,
+};
 
-use crate::cf104::Joystick;
+use bevy::{
+    app::{FixedUpdate, Plugin},
+    ecs::{
+        bundle::Bundle,
+        component::Component,
+        entity::Entity,
+        query::{With, Without},
+        system::{Commands, Query, Res, Single},
+    },
+    math::{EulerRot, Quat, Vec2, Vec3},
+    prelude::{Deref, DerefMut},
+    time::Time,
+    transform::components::Transform,
+};
 
-#[derive(Component)]
+use crate::cf104::{Joystick, console::throttle::Throttle};
+
+#[derive(Component, Debug)]
+pub struct Grounded;
+
+#[derive(Component, Debug)]
 pub struct Projectile;
 
-#[derive(Component, Deref, DerefMut)]
+#[derive(Component, Deref, DerefMut, Debug)]
 pub struct Velocity(pub Vec3);
 
-#[derive(Component, Deref, DerefMut)]
+#[derive(Component, Deref, DerefMut, Debug)]
 pub struct AngularVelocity(pub Vec3);
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct MomentOfInertia(pub f32);
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct Mass(pub f32);
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct DragCoefficient(pub f32);
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct CrossSectionArea(pub f32);
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct GravityScale(pub f32);
 
-#[derive(Component)]
+#[derive(Component, Debug)]
+pub struct WingArea(pub f32); //m^2
+
+#[derive(Component, Debug)]
 pub struct Engine {
     pub max_thrust: f32,
     pub ramp_time: f32,
     pub elapsed: f32,
     pub direction: Quat,
-    pub throttle: f32,
+    pub current_thrust: f32,
 }
 
 impl Engine {
-    pub fn engine_thrust(&self) -> f32 {
-        let ramp_factor = if self.ramp_time > 0.0 {
-            (self.elapsed / self.ramp_time).clamp(0.0, 1.0)
-        } else {
-            1.0
-        };
-
-        self.max_thrust * self.throttle.clamp(0.0, 1.0) * ramp_factor
+    pub fn cf104() -> Self {
+        Self {
+            max_thrust: 44_000.0,
+            ramp_time: 5.0,
+            elapsed: 0.0,
+            direction: Quat::from_rotation_y(PI),
+            current_thrust: 0.0,
+        }
     }
-    
     pub fn thrust_vector(&self, transform: &Transform) -> Vec3 {
-        let thrust_magnitude: f32 = self.engine_thrust();
-        let world_dir = transform.rotation * self.direction;
+        let world_dir = transform.rotation * self.direction * Vec3::X;
+        world_dir * self.current_thrust
+    }
+}
 
-        world_dir * thrust_magnitude * Vec3::X
+#[derive(Component, Debug)]
+pub struct BrakeForce(pub f32, pub bool);
+
+#[derive(Component, Debug)]
+pub struct SteeringWheel {
+    pub max_angle: f32,
+    pub input_dir: f32,
+    pub current_angle: f32,
+    pub delta_speed: f32,
+}
+
+#[derive(Bundle)]
+pub struct GroundedBundle {
+    pub grounded: Grounded,
+    pub brake_force: BrakeForce,
+    pub turn_radius: SteeringWheel,
+}
+
+impl GroundedBundle {
+    pub fn cf_104() -> Self {
+        GroundedBundle {
+            grounded: Grounded,
+            brake_force: BrakeForce(8_000.0, false),
+            turn_radius: SteeringWheel {
+                max_angle: FRAC_PI_4,
+                input_dir: 0.0,
+                current_angle: 0.0,
+                delta_speed: 2.0,
+            },
+        }
     }
 }
 
@@ -63,6 +117,7 @@ pub struct PlaneBundle {
     pub mass: Mass,
     pub drag: DragCoefficient,
     pub cross_section: CrossSectionArea,
+    pub wing_area: WingArea,
     pub engine: Engine,
 }
 
@@ -76,22 +131,45 @@ impl PlaneBundle {
             mass: Mass(13_200.0),
             drag: DragCoefficient(0.75),
             cross_section: CrossSectionArea(3.0),
-            engine: Engine {
-                max_thrust: 44_000.0,
-                ramp_time: 5.0,
-                elapsed: 0.0,
-                direction: Quat::IDENTITY,
-                throttle: 0.0,
-            },
+            wing_area: WingArea(18.2),
+            engine: Engine::cf104(),
         }
     }
 }
 
-pub fn update_rotation(
+fn vec3_fmt(v: Vec3) -> String {
+    format!("({:.2}, {:.2}, {:.2})", v.x, v.y, v.z)
+}
+
+pub fn update_engine_thrust(
     time: Res<Time>,
-    mut query: Query<(&Joystick, &Velocity, &mut AngularVelocity)>,
+    throttle: Single<&Throttle>,
+    mut query: Query<&mut Engine>,
 ) {
-    for (joystick, velocity, mut ang_vel) in &mut query {
+    for mut engine in &mut query {
+        // ramping
+        if throttle.0 > 0.05 {
+            engine.elapsed += time.delta_secs();
+        } else {
+            engine.elapsed = (engine.elapsed - time.delta_secs() * 2.0).max(0.0);
+        }
+
+        let ramp_factor = if engine.ramp_time > 0.0 {
+            (engine.elapsed / engine.ramp_time).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+
+        engine.current_thrust = engine.max_thrust * (throttle.0 / 100.) * ramp_factor;
+    }
+}
+
+pub fn update_angular_projectile_velocity(
+    time: Res<Time>,
+    joystick: Single<&Joystick>,
+    mut query: Query<(&Velocity, &mut AngularVelocity), (With<Projectile>, Without<Grounded>)>,
+) {
+    for (velocity, mut ang_vel) in &mut query {
         let input = joystick.0;
         if input == Vec2::ZERO {
             continue;
@@ -101,16 +179,16 @@ pub fn update_rotation(
 
         // --- Airspeed-based control authority ---
         let airspeed = velocity.length();
-        const MIN_EFFECTIVE_SPEED: f32 = 20.0;   // below this, little control
-        const MAX_EFFECTIVE_SPEED: f32 = 300.0;  // full control authority
-        const MAX_ANGULAR_ACCEL: f32 = 1.5;      // radians/s²
+        const MIN_EFFECTIVE_SPEED: f32 = 20.0; // below this, little control
+        const MAX_EFFECTIVE_SPEED: f32 = 300.0; // full control authority
+        const MAX_ANGULAR_ACCEL: f32 = 2.0; // radians/s²
 
         let control_effectiveness = ((airspeed - MIN_EFFECTIVE_SPEED)
             / (MAX_EFFECTIVE_SPEED - MIN_EFFECTIVE_SPEED))
             .clamp(0.0, 1.0);
 
         // --- Compute angular acceleration ---
-        let pitch_accel = -input.y * control_effectiveness * MAX_ANGULAR_ACCEL;
+        let pitch_accel = input.y * control_effectiveness * MAX_ANGULAR_ACCEL;
         let roll_accel = -input.x * control_effectiveness * MAX_ANGULAR_ACCEL;
 
         // --- Update angular velocity ---
@@ -119,9 +197,43 @@ pub fn update_rotation(
     }
 }
 
+pub fn update_grounded_turn(
+    time: Res<Time>,
+    mut query: Query<(&Velocity, &mut Transform, &mut SteeringWheel), (With<Grounded>)>,
+) {
+    for (vel, mut transform, mut wheel) in &mut query {
+        let dt = time.delta_secs();
+        let speed = vel.length();
+
+        let speed_factor = ((speed - 10.0) / (40.0 - 10.0)).clamp(0.0, 1.0);
+        let speed_effectiveness = 1.0 - speed_factor;
+
+        // Target steering angle (reversed direction for correct turning feel)
+        let target_angle = -wheel.max_angle * wheel.input_dir * speed_effectiveness;
+
+        let angle_diff = target_angle - wheel.current_angle;
+        let max_delta = wheel.delta_speed * dt;
+        let applied_delta = angle_diff.clamp(-max_delta, max_delta);
+        wheel.current_angle += applied_delta;
+
+        let yaw_rate = (wheel.current_angle * (1.0 - speed_factor)) * dt * 0.25;
+        let yaw_rotation = Quat::from_rotation_y(yaw_rate);
+        transform.rotation = yaw_rotation * transform.rotation;
+
+        // println!(
+        //     "Wheel Debug → speed: {:.1} m/s | eff: {:.2} | target: {:.2} rad | current: {:.2} rad | applied: {:.3}",
+        //     speed,
+        //     speed_effectiveness,
+        //     target_angle,
+        //     wheel.current_angle,
+        //     applied_delta
+        // );
+    }
+}
+
 pub fn apply_angular_damping(
     time: Res<Time>,
-    mut query: Query<(&Velocity, &mut AngularVelocity)>,
+    mut query: Query<(&Velocity, &mut AngularVelocity), With<Projectile>>,
 ) {
     for (vel, mut ang_vel) in &mut query {
         let airspeed = vel.length();
@@ -131,83 +243,217 @@ pub fn apply_angular_damping(
         ang_vel.0 *= 1.0 - (damping * time.delta_secs()).min(1.0);
     }
 }
-
-pub fn update_projectile(
+pub fn update_projectile_velocity(
     time: Res<Time>,
-    mut query: Query<(
-        &mut Transform,
-        &mut Velocity,
-        &mut AngularVelocity,
-        &Mass,
-        &MomentOfInertia,
-        &DragCoefficient,
-        &CrossSectionArea,
-        &Engine,
-        Option<&GravityScale>,
-    ), With<Projectile>>,
+    mut query: Query<
+        (
+            &mut Velocity,
+            &Transform,
+            &Mass,
+            &DragCoefficient,
+            &CrossSectionArea,
+            &WingArea,
+            &Engine,
+        ),
+        (With<Projectile>, Without<Grounded>),
+    >,
 ) {
-    const AIR_DENSITY: f32 = 1.225; // kg/m³ at sea level
-    let dt = time.delta_secs();
+    const AIR_DENSITY: f32 = 1.225; // kg/m³
+    const GRAVITY: f32 = 9.81;
+    const LIFT_COEFFICIENT: f32 = 0.8;
 
-    for (
-        mut transform,
-        mut velocity,
-        mut angular_velocity,
-        mass,
-        inertia,
-        drag,
-        area,
-        engine,
-        gravity_scale,
-    ) in &mut query
+    for (mut vel, transform, mass, drag, cross_section, wing_area, engine) in &mut query {
+        let dt = time.delta_secs();
+
+        let forward = transform.rotation * Vec3::X;
+        let up = transform.rotation * Vec3::Y;
+
+        let speed = vel.length();
+        let velocity_dir = if speed > 0.001 {
+            vel.normalize()
+        } else {
+            forward
+        };
+
+        // --- Forces ---
+        let thrust = engine.thrust_vector(transform);
+        let drag_force =
+            -velocity_dir * 0.5 * AIR_DENSITY * speed * speed * drag.0 * cross_section.0;
+
+        let lift_magnitude = 0.5 * AIR_DENSITY * speed * speed * LIFT_COEFFICIENT * wing_area.0;
+        let lift_force = up * lift_magnitude;
+
+        let gravity_force = Vec3::new(0.0, -mass.0 * GRAVITY, 0.0);
+
+        let total_force = thrust + drag_force + lift_force + gravity_force;
+        let acceleration = total_force / mass.0;
+
+        vel.0 += acceleration * dt;
+
+        let max_speed = 590.0;
+        if vel.0.length() > max_speed {
+            vel.0 = vel.0.normalize() * max_speed;
+        }
+
+        if vel.0.x.is_nan() {
+            panic!();
+        }
+
+        println!(
+            "pos: {:#?} rot: {:#?}",
+            &transform.translation,
+            &transform.rotation.to_euler(EulerRot::XYZ)
+        );
+        println!(
+            "Velocity: {}, Total Force: {}",
+            vec3_fmt(vel.0),
+            vec3_fmt(total_force)
+        );
+        println!(
+            "Engine Thrust: {}, Drag: {}, Gravity: {}, Lift: {}",
+            vec3_fmt(thrust),
+            vec3_fmt(drag_force),
+            vec3_fmt(gravity_force),
+            vec3_fmt(lift_force)
+        );
+    }
+}
+
+pub fn update_grounded_velocity(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut query: Query<
+        (
+            Entity,
+            &mut Velocity,
+            &BrakeForce,
+            &SteeringWheel,
+            &Transform,
+            &Mass,
+            &DragCoefficient,
+            &CrossSectionArea,
+            &WingArea,
+            &Engine,
+        ),
+        (With<Projectile>, With<Grounded>),
+    >,
+) {
+    const AIR_DENSITY: f32 = 1.225;
+    const GRAVITY: f32 = 9.81;
+    const LIFT_COEFFICIENT: f32 = 0.8;
+    const ROLLING_RESISTANCE: f32 = 5.0;
+
+    for (entity, mut vel, brake, wheel, transform, mass, drag, cross_section, wing_area, engine) in
+        &mut query
     {
-        // --- ENGINE THRUST ---
-        let thrust_mag = engine.max_thrust * engine.elapsed;
-        let thrust_dir = transform.rotation * Vec3::Z; // forward in world space
-        let thrust_force = thrust_dir * thrust_mag;
+        let dt = time.delta_secs();
 
-        // --- DRAG FORCE ---
-        let speed = velocity.0.length();
-        let drag_force = if speed > 0.0 {
-            -0.5 * AIR_DENSITY * speed * speed * drag.0 * area.0 * velocity.0.normalize()
+        let forward = transform.rotation * Vec3::X;
+        let right = transform.rotation * Vec3::Z;
+        let up = transform.rotation * Vec3::Y;
+
+        let speed = vel.length();
+        let velocity_dir = if speed > 0.001 {
+            vel.normalize()
+        } else {
+            forward
+        };
+
+        // --- Forces ---
+        let thrust = engine.thrust_vector(transform);
+        let drag_force =
+            -velocity_dir * 0.5 * AIR_DENSITY * speed * speed * drag.0 * cross_section.0;
+
+        let brake_force = if brake.1 {
+            -velocity_dir * brake.0
         } else {
             Vec3::ZERO
         };
 
-        // --- GRAVITY ---
-        let gravity_force = Vec3::new(0.0, -9.81, 0.0)
-            * gravity_scale.map_or(1.0, |g| g.0)
-            * mass.0;
+        let rolling_resistance = -velocity_dir * speed * ROLLING_RESISTANCE;
 
-        // --- SUM FORCES ---
-        let total_force = thrust_force + drag_force + gravity_force;
+        let lift_magnitude = 0.5 * AIR_DENSITY * speed * speed * LIFT_COEFFICIENT * wing_area.0;
+        let lift_force = up * lift_magnitude;
+
+        let gravity_force = Vec3::new(0.0, -mass.0 * GRAVITY, 0.0);
+
+        // total force (no lateral friction)
+        let total_force =
+            thrust + drag_force + brake_force + rolling_resistance + lift_force + gravity_force;
+
         let acceleration = total_force / mass.0;
+        vel.0 += acceleration * dt;
 
-        // --- LINEAR INTEGRATION ---
-        velocity.0 += acceleration * dt;
+        // --- Remove lateral velocity ---
+        // Project velocity onto forward vector and discard sideways (right) component
+        let forward_vel = forward.normalize() * vel.0.dot(forward.normalize());
+        vel.0 = forward_vel + Vec3::Y * vel.0.dot(Vec3::Y);
+
+        // Prevent negative vertical velocity while grounded
+        vel.y = vel.y.max(0.0);
+
+        let max_speed = 590.0;
+        if vel.0.length() > max_speed {
+            vel.0 = vel.0.normalize() * max_speed;
+        }
+
+        // println!(
+        //     "\nVelocity: {} | Total: {}",
+        //     vec3_fmt(vel.0),
+        //     vec3_fmt(total_force)
+        // );
+        // println!(
+        //     "Thrust: {} | Brake: {} | RollRes: {} | Lift: {} | Gravity: {}",
+        //     vec3_fmt(thrust),
+        //     vec3_fmt(brake_force),
+        //     vec3_fmt(rolling_resistance),
+        //     vec3_fmt(lift_force),
+        //     vec3_fmt(gravity_force),
+        // );
+
+        if vel.y > 0.0 {
+            commands.entity(entity).remove::<Grounded>();
+            println!("✈️  Takeoff! The CF-104 is airborne.");
+        }
+    }
+}
+
+pub fn update_transform(
+    time: Res<Time>,
+    mut query: Query<(&mut Transform, &Velocity, &AngularVelocity)>,
+) {
+    let dt = time.delta_secs();
+
+    for (mut transform, velocity, angular_velocity) in &mut query {
+        // --- Translation ---
         transform.translation += velocity.0 * dt;
 
-        // =====================
-        //  ANGULAR DYNAMICS
-        // =====================
+        // --- Rotation integration ---
+        let angular_speed = angular_velocity.length();
+        if angular_speed > 0.0001 {
+            let axis = angular_velocity.normalize();
+            let delta_rot = Quat::from_axis_angle(axis, angular_speed * dt);
+            transform.rotation = delta_rot * transform.rotation;
+        }
+    }
+}
 
-        // --- ENGINE TORQUE (simple yaw/pitch control) ---
-        // let torque = engine.torque_dir * engine.torque_strength;
+pub struct ProjectilePlugin;
 
-        // // --- ROTATIONAL DRAG (aerodynamic stability) ---
-        // let angular_drag = -angular_velocity.0 * 0.5 * AIR_DENSITY * area.0 * drag.0;
-
-        // // --- SUM TORQUES ---
-        // let total_torque = torque + angular_drag;
-
-        // // --- ROTATIONAL ACCELERATION ---
-        // let angular_accel = total_torque / inertia.0;
-
-        // // --- UPDATE ANGULAR VELOCITY ---
-        // angular_velocity.0 += angular_accel * dt;
-
-        // // --- UPDATE ROTATION ---
-        // let delta_rot = Quat::from_scaled_axis(angular_velocity.0 * dt);
-        // transform.rotation = (transform.rotation * delta_rot).normalize();
+impl Plugin for ProjectilePlugin {
+    fn build(&self, app: &mut bevy::app::App) {
+        app.add_systems(
+            FixedUpdate,
+            (
+                update_engine_thrust,
+                update_angular_projectile_velocity,
+                apply_angular_damping,
+                update_grounded_turn,
+                update_projectile_velocity,
+                update_projectile_velocity,
+                update_grounded_velocity,
+                update_transform,
+            ),
+        );
     }
 }
