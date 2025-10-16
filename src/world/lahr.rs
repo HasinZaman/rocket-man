@@ -66,30 +66,30 @@ pub fn spawn_lahr_airbase(
     }
 
     // hangers
-    // for i in 0..4 {
-    //     let hanger = {
-    //     let parent_mesh_handle: Handle<Mesh> =
-    //         asset_server.load(&format!("{ASSET_PATHS}#Mesh{}/Primitive0", 2));
-    //     let parent_material_handle = materials.add(StandardMaterial::default());
+    for i in 0..4 {
+        let hanger = {
+        let parent_mesh_handle: Handle<Mesh> =
+            asset_server.load(&format!("{ASSET_PATHS}#Mesh{}/Primitive0", 2));
+        let parent_material_handle = materials.add(StandardMaterial::default());
 
-    //     let mut transform = Transform::default();
+        let mut transform = Transform::default();
 
-    //     transform.translation = Vec3 {
-    //         x: 39.25777053833008 + i as f32 * 50.,
-    //         y: 1.,
-    //         z: 169.4016571044922
-    //     };
+        transform.translation = Vec3 {
+            x: 39.25777053833008 + i as f32 * 50.,
+            y: 1.,
+            z: 169.4016571044922
+        };
 
-    //     transform.rotation = Quat::from_xyzw(0.7071068286895752, 0., 0., 0.7071068286895752);
+        transform.rotation = Quat::from_xyzw(0.7071068286895752, 0., 0., 0.7071068286895752);
 
-    //     commands
-    //         .spawn((
-    //             Mesh3d(parent_mesh_handle),
-    //             MeshMaterial3d(parent_material_handle),
-    //             transform,
-    //             ChildOf(air_base),
-    //         ))
-    //         .id()
-    //     };
-    // }
+        commands
+            .spawn((
+                Mesh3d(parent_mesh_handle),
+                MeshMaterial3d(parent_material_handle),
+                transform,
+                ChildOf(air_base),
+            ))
+            .id()
+        };
+    }
 }

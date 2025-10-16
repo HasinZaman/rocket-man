@@ -13,3 +13,7 @@ opt-level = 3
 
 [dependencies]
 bevy = "0.17.2"
+ron = "0.11.0"
+serde = { version = "1", features = ["derive"] }
+lewton = "0.10"
+thiserror = "2"

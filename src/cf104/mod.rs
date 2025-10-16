@@ -128,12 +128,12 @@ impl EngineAudio {
             let throttle_factor = (throttle.0 / 100.0).clamp(0.0, 1.0);
 
             let min_volume = match cockpit_closed {
-                true => 10.0,
-                false => 30.0,
+                true => 20.0,
+                false => 40.0,
             };
             let max_volume = match cockpit_closed {
-                true => 30.0,
-                false => 50.0,
+                true => 40.0,
+                false => 60.0,
             };
 
             let target_volume =
@@ -505,7 +505,7 @@ fn load_cf104<const PLAYER: bool>(
                     z: 0.910442054271698,
                 };
 
-                spawn_radio::<26, 24, 25>(
+                spawn_radio::<26, 24, 25, 23>(
                     transform,
                     commands,
                     asset_server,

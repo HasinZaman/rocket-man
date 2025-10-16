@@ -6,10 +6,9 @@ use bevy::{
 };
 
 use crate::player::{
-    camera::{MaskMaterials, OutlineCamera, OutlineTexture, look_camera, setup_mask_materials},
+    camera::{look_camera, setup_mask_materials, MaskMaterials, OutlineCamera, OutlineTexture},
     controls::{
-        Arms, KeyBindings, canopy_door_controller, grounded_controller, joystick_controller,
-        select_tool, throttle_controller, update_key_bindings,
+        canopy_door_controller, grounded_controller, joystick_controller, radio_fx_controller, radio_volume_controller, select_tool, throttle_controller, update_key_bindings, Arms, KeyBindings
     },
     ui::{center_cursor, fullscreen_startup, hide_cursor},
 };
@@ -46,6 +45,8 @@ impl Plugin for PlayerPlugin {
                     throttle_controller,
                     joystick_controller,
                     canopy_door_controller,
+                    radio_fx_controller,
+                    radio_volume_controller
                 ),
             );
     }

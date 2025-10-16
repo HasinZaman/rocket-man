@@ -1,18 +1,13 @@
-use crate::cf104::Plane;
 use crate::player::controls::{KeyBindings, KeyState};
 use crate::player::{Player, Selectable};
-use bevy::camera::RenderTarget;
-use bevy::camera::primitives::CubeMapFace;
 use bevy::camera::visibility::RenderLayers;
-use bevy::core_pipeline::Skybox;
-use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseWheel};
+use bevy::camera::RenderTarget;
+use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::prelude::*;
 use bevy::render::render_resource::{
     Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
 };
-use std::default;
-use std::f32::consts::{FRAC_PI_2, FRAC_PI_3, FRAC_PI_4, PI};
-use std::ops::DerefMut;
+use std::f32::consts::{FRAC_PI_3, PI};
 
 #[derive(Component)]
 pub struct OutlineCamera;
@@ -71,6 +66,33 @@ pub fn setup_mask_materials(
 }
 
 #[derive(Component)]
+pub struct LeftSpeaker;
+
+#[derive(Component)]
+pub struct RightSpeaker;
+
+#[derive(Component)]
+pub struct SpeakerSink;
+
+pub fn spawn_headset_with_speakers(commands: &mut Commands, parent: Entity) {
+    // LEFT SPEAKER
+    commands
+        .spawn((
+            LeftSpeaker,
+            Transform::from_translation(Vec3::new(-0.1, 0.0, 0.0)),
+            ChildOf(parent),
+        ));
+
+    // RIGHT SPEAKER
+    commands
+        .spawn((
+            RightSpeaker,
+            Transform::from_translation(Vec3::new(0.1, 0.0, 0.0)),
+            ChildOf(parent),
+        ));
+}
+
+#[derive(Component)]
 pub struct CameraSensitivity(Vec2);
 
 impl Default for CameraSensitivity {
@@ -126,6 +148,10 @@ pub fn set_up_player_camera(
             ))
             .id(),
     };
+
+    spawn_headset_with_speakers(commands, camera_id);
+    // create player headset for radio chatter + music
+
 
     let size = Extent3d {
         width: 1920,
