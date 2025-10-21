@@ -1,29 +1,25 @@
 use std::f32::consts::TAU;
-use std::fs;
 use std::time::Duration;
 
 use bevy::asset::io::Reader;
 use bevy::asset::{AssetLoader, LoadContext};
 use bevy::audio::Volume;
-use bevy::tasks::BoxedFuture;
 use bevy::{camera::visibility::NoFrustumCulling, prelude::*};
-use lewton::inside_ogg::OggStreamReader;
 use lewton::VorbisError;
+use lewton::inside_ogg::OggStreamReader;
 use ron::de::SpannedError;
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::player::camera::{mask_mesh, LeftSpeaker, MaskMaterials, RightSpeaker, SpeakerSink};
+use crate::player::camera::{LeftSpeaker, MaskMaterials, RightSpeaker, SpeakerSink, mask_mesh};
 
 use crate::cf104::CF104_CONSOLE_ASSET_PATH;
 
 #[derive(Component, Debug)]
 pub struct RadioFxSelector(pub u8);
 
-
 #[derive(Message, Debug)]
 pub struct UpdateRadioFx(pub u8);
-
 
 #[derive(Component, Debug)]
 pub struct RadioVolume(pub f32);
@@ -31,7 +27,12 @@ pub struct RadioVolume(pub f32);
 #[derive(Message, Debug)]
 pub struct UpdateVolume(pub f32);
 
-pub fn spawn_radio<const FRAME_MESH: u32, const CHANNEL_MESH: u32, const VOLUME_MESH: u32, const SELECTOR_MESH: u32>(
+pub fn spawn_radio<
+    const FRAME_MESH: u32,
+    const CHANNEL_MESH: u32,
+    const VOLUME_MESH: u32,
+    const SELECTOR_MESH: u32,
+>(
     transform: Transform,
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
@@ -81,15 +82,17 @@ pub fn spawn_radio<const FRAME_MESH: u32, const CHANNEL_MESH: u32, const VOLUME_
         z: -0.01099395751953125,
     };
     transform.rotation = Quat::from_xyzw(0.7071068286895752, 0., 0., 0.7071068286895752);
-    let radio_dial = commands.spawn((
-        Mesh3d(mesh.clone()),
-        MeshMaterial3d(material_handle.clone()),
-        RadioFxSelector(0),
-        // Visibility::Visible,
-        NoFrustumCulling,
-        transform,
-        ChildOf(radio_id),
-    )).id();
+    let radio_dial = commands
+        .spawn((
+            Mesh3d(mesh.clone()),
+            MeshMaterial3d(material_handle.clone()),
+            RadioFxSelector(0),
+            // Visibility::Visible,
+            NoFrustumCulling,
+            transform,
+            ChildOf(radio_id),
+        ))
+        .id();
     mask_mesh::<false>(mask_materials, mesh.clone(), radio_dial, commands);
 
     let mesh: Handle<Mesh> = asset_server.load(&format!(
@@ -107,7 +110,7 @@ pub fn spawn_radio<const FRAME_MESH: u32, const CHANNEL_MESH: u32, const VOLUME_
         .spawn((
             Mesh3d(mesh.clone()),
             MeshMaterial3d(material_handle.clone()),
-            RadioVolume(25.),
+            RadioVolume(5.),
             // Visibility::Visible,
             NoFrustumCulling,
             transform,
@@ -115,8 +118,10 @@ pub fn spawn_radio<const FRAME_MESH: u32, const CHANNEL_MESH: u32, const VOLUME_
         ))
         .id();
     mask_mesh::<false>(mask_materials, mesh.clone(), volume_id, commands);
-    let mesh: Handle<Mesh> =
-        asset_server.load(&format!("{CF104_CONSOLE_ASSET_PATH}#Mesh{}/Primitive0", SELECTOR_MESH));
+    let mesh: Handle<Mesh> = asset_server.load(&format!(
+        "{CF104_CONSOLE_ASSET_PATH}#Mesh{}/Primitive0",
+        SELECTOR_MESH
+    ));
     let material_handle = console_material.clone();
     let mut transform = Transform::default();
     transform.translation = Vec3 {
@@ -137,9 +142,7 @@ pub fn spawn_radio<const FRAME_MESH: u32, const CHANNEL_MESH: u32, const VOLUME_
     mask_mesh::<true>(mask_materials, mesh.clone(), selector, commands);
 }
 
-pub fn update_fx_selector(
-    mut query: Query<(&mut Transform, &RadioFxSelector)>,
-) {
+pub fn update_fx_selector(mut query: Query<(&mut Transform, &RadioFxSelector)>) {
     for (mut transform, selector) in &mut query {
         transform.rotation = Quat::from_rotation_y(TAU / 28. * selector.0 as f32);
     }
@@ -148,7 +151,7 @@ pub fn update_fx_selector(
 pub fn update_volume_knob(
     mut volume_message: MessageReader<UpdateVolume>,
     mut transform: Single<&mut Transform, With<RadioVolume>>,
-    head_set_emitters: Query<(&mut SpatialAudioSink), With<SpeakerSink>>
+    head_set_emitters: Query<&mut SpatialAudioSink, With<SpeakerSink>>,
 ) {
     let Some(volume) = volume_message.read().last() else {
         return;
@@ -158,7 +161,7 @@ pub fn update_volume_knob(
 
     transform.rotation = Quat::from_rotation_y(TAU * volume.0 / 100.);
 
-    for mut speaker in head_set_emitters{
+    for mut speaker in head_set_emitters {
         speaker.set_volume(Volume::Linear(volume.0 / 100. * 3.));
     }
 }
@@ -172,7 +175,7 @@ pub struct Playable {
 #[derive(Debug, Clone, Deserialize, TypePath, Asset)]
 pub struct RadioChannelConfig {
     source: Option<(Vec3, f32)>,
-    playables: Vec<Playable>    
+    playables: Vec<Playable>,
 }
 
 #[derive(Debug, Error)]
@@ -205,10 +208,9 @@ impl AssetLoader for RadioChannelLoader {
         let mut config: RadioChannelConfig = ron::de::from_bytes(&bytes)?;
 
         let asset_root = std::path::Path::new("assets");
-        let dir_path = load_context
-            .path()
-            .parent()
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "Failed to get directory"))?;
+        let dir_path = load_context.path().parent().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::Other, "Failed to get directory")
+        })?;
 
         // Prepend ./assets so the OS can find the files
         let full_dir_path = asset_root.join(dir_path);
@@ -223,7 +225,7 @@ impl AssetLoader for RadioChannelLoader {
                 if config.playables.iter().any(|p| p.audio == filename) {
                     continue;
                 }
-                
+
                 match std::fs::File::open(&path) {
                     Ok(file) => {
                         match OggStreamReader::new(file) {
@@ -232,11 +234,11 @@ impl AssetLoader for RadioChannelLoader {
                                 let channels = ogg_reader.ident_hdr.audio_channels;
 
                                 let mut total_samples = 0usize;
-                                let mut packet_count = 0usize;
+                                // let mut packet_count = 0usize;
 
                                 while let Some(pck) = ogg_reader.read_dec_packet_itl()? {
                                     total_samples += pck.len() / channels as usize;
-                                    packet_count += 1;
+                                    // packet_count += 1;
                                 }
 
                                 let duration = total_samples as f32 / sample_rate as f32;
@@ -247,7 +249,12 @@ impl AssetLoader for RadioChannelLoader {
                                     .replace("\\", "/") // normalize Windows paths
                                     .split("assets/")
                                     .nth(1) // take everything after "assets/"
-                                    .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "Failed to strip assets prefix"))?
+                                    .ok_or_else(|| {
+                                        std::io::Error::new(
+                                            std::io::ErrorKind::Other,
+                                            "Failed to strip assets prefix",
+                                        )
+                                    })?
                                     .to_string();
 
                                 config.playables.push(Playable {
@@ -269,7 +276,6 @@ impl AssetLoader for RadioChannelLoader {
 
         Ok(config)
     }
-
 
     fn extensions(&self) -> &[&str] {
         &["radio_config"]
@@ -315,10 +321,8 @@ pub fn update_radio(
     mut commands: Commands,
     left_speaker: Query<(Entity, Option<&Children>), With<LeftSpeaker>>,
     right_speaker: Query<(Entity, Option<&Children>), With<RightSpeaker>>,
-    volume: Single<&RadioVolume>
-    // sinks: Query<Entity, (With<SpatialAudioSink>, With<SpeakerSink>)>,
+    volume: Single<&RadioVolume>, // sinks: Query<Entity, (With<SpatialAudioSink>, With<SpeakerSink>)>,
 ) {
-    
     'change_channel: {
         if let Some(UpdateRadioFx(idx)) = radio_fx_reader.read().last() {
             // println!("New channel");
@@ -329,7 +333,7 @@ pub fn update_radio(
                     let Some(children) = children else {
                         continue;
                     };
-                    for child in children{
+                    for child in children {
                         println!("de-spawning: {child:?}");
                         commands.entity(*child).despawn();
                     }
@@ -339,7 +343,9 @@ pub fn update_radio(
                     println!("spawning in: {entity:?}");
                     commands.spawn((
                         AudioPlayer::new(asset_server.load("audio/radio_static.ogg")),
-                        PlaybackSettings::LOOP.with_spatial(true),
+                        PlaybackSettings::LOOP
+                            .with_spatial(true)
+                            .with_volume(Volume::Linear(volume.0 / 100. * 3.)),
                         SpeakerSink,
                         Transform::IDENTITY,
                         ChildOf(entity),
@@ -351,7 +357,8 @@ pub fn update_radio(
                 return;
             };
 
-            let Some(new_channel_config) = radio_channel_configs.get(radio_channel_config.id()) else {
+            let Some(new_channel_config) = radio_channel_configs.get(radio_channel_config.id())
+            else {
                 // println!("try again");
                 // try again once the config is loaded
                 radio_fx_writer.write(DeferredFxChange(*idx));
@@ -366,21 +373,25 @@ pub fn update_radio(
                 let Some(children) = children else {
                     continue;
                 };
-                for child in children{
+                for child in children {
                     commands.entity(*child).despawn();
                 }
             }
             // replace sinks with static
             for (entity, _) in left_speaker.iter().chain(right_speaker.iter()) {
                 commands.spawn((
-                    AudioPlayer::new(asset_server.load(new_channel_config.playables[0].audio.clone())),
-                    PlaybackSettings::LOOP.with_spatial(true),
+                    AudioPlayer::new(
+                        asset_server.load(new_channel_config.playables[0].audio.clone()),
+                    ),
+                    PlaybackSettings::LOOP
+                        .with_spatial(true)
+                        .with_volume(Volume::Linear(volume.0 / 100. * 3.)),
                     SpeakerSink,
                     Transform::IDENTITY,
                     ChildOf(entity),
                 ));
             }
-            
+
             radio_volume_write.write(UpdateVolume(volume.0));
             return;
         }
@@ -391,7 +402,7 @@ pub fn update_radio(
         radio.playable_duration.tick(time.delta());
 
         if !radio.playable_duration.is_finished() {
-            return
+            return;
         };
         println!("New audio");
         radio.idx = (radio.idx + 1) % channel_config.playables.len();
@@ -401,22 +412,26 @@ pub fn update_radio(
             let Some(children) = children else {
                 continue;
             };
-            for child in children{
+            for child in children {
                 commands.entity(*child).despawn();
             }
         }
         for (entity, _) in left_speaker.iter().chain(right_speaker.iter()) {
             commands.spawn((
                 AudioPlayer::new(asset_server.load(channel_config.playables[idx].audio.clone())),
-                PlaybackSettings::LOOP.with_spatial(true),
+                PlaybackSettings::LOOP
+                    .with_spatial(true)
+                    .with_volume(Volume::Linear(volume.0 / 100. * 3.)),
                 SpeakerSink,
                 Transform::IDENTITY,
                 ChildOf(entity),
             ));
         }
         radio.playable_duration.reset();
-        radio.playable_duration.set_duration(Duration::from_secs(channel_config.playables[idx].duration as u64));
-        radio_volume_write.write(UpdateVolume(volume.0));
+        radio.playable_duration.set_duration(Duration::from_secs(
+            channel_config.playables[idx].duration as u64,
+        ));
+        // radio_volume_write.write(UpdateVolume(volume.0));
     };
 }
 

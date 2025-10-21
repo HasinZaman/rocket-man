@@ -1,14 +1,11 @@
-use std::f32::consts::{FRAC_PI_2, PI};
-
-use bevy::{
-    color::palettes::css, core_pipeline::tonemapping::Tonemapping, math::vec3,
-    picking::backend::ray::RayMap, post_process::bloom::Bloom, prelude::*,
-};
+use bevy::prelude::*;
 
 use crate::player::{
-    camera::{look_camera, setup_mask_materials, MaskMaterials, OutlineCamera, OutlineTexture},
+    camera::{MaskMaterials, OutlineCamera, OutlineTexture, look_camera, setup_mask_materials},
     controls::{
-        canopy_door_controller, grounded_controller, joystick_controller, radio_fx_controller, radio_volume_controller, select_tool, throttle_controller, update_key_bindings, Arms, KeyBindings
+        Arms, KeyBindings, canopy_door_controller, grounded_controller, joystick_controller,
+        radio_fx_controller, radio_volume_controller, select_tool, throttle_controller,
+        update_key_bindings,
     },
     ui::{center_cursor, fullscreen_startup, hide_cursor},
 };
@@ -46,7 +43,7 @@ impl Plugin for PlayerPlugin {
                     joystick_controller,
                     canopy_door_controller,
                     radio_fx_controller,
-                    radio_volume_controller
+                    radio_volume_controller,
                 ),
             );
     }

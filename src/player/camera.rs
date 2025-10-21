@@ -1,7 +1,7 @@
 use crate::player::controls::{KeyBindings, KeyState};
 use crate::player::{Player, Selectable};
-use bevy::camera::visibility::RenderLayers;
 use bevy::camera::RenderTarget;
+use bevy::camera::visibility::RenderLayers;
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::prelude::*;
 use bevy::render::render_resource::{
@@ -76,20 +76,18 @@ pub struct SpeakerSink;
 
 pub fn spawn_headset_with_speakers(commands: &mut Commands, parent: Entity) {
     // LEFT SPEAKER
-    commands
-        .spawn((
-            LeftSpeaker,
-            Transform::from_translation(Vec3::new(-0.1, 0.0, 0.0)),
-            ChildOf(parent),
-        ));
+    commands.spawn((
+        LeftSpeaker,
+        Transform::from_translation(Vec3::new(-0.1, 0.0, 0.0)),
+        ChildOf(parent),
+    ));
 
     // RIGHT SPEAKER
-    commands
-        .spawn((
-            RightSpeaker,
-            Transform::from_translation(Vec3::new(0.1, 0.0, 0.0)),
-            ChildOf(parent),
-        ));
+    commands.spawn((
+        RightSpeaker,
+        Transform::from_translation(Vec3::new(0.1, 0.0, 0.0)),
+        ChildOf(parent),
+    ));
 }
 
 #[derive(Component)]
@@ -100,6 +98,9 @@ impl Default for CameraSensitivity {
         Self(Vec2::new(0.003, 0.002))
     }
 }
+
+#[derive(Component, Default)]
+pub struct CameraShake(f32);
 
 pub fn set_up_player_camera(
     commands: &mut Commands,
@@ -151,7 +152,6 @@ pub fn set_up_player_camera(
 
     spawn_headset_with_speakers(commands, camera_id);
     // create player headset for radio chatter + music
-
 
     let size = Extent3d {
         width: 1920,

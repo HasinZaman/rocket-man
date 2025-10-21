@@ -1,7 +1,15 @@
 use bevy::prelude::*;
 
 use crate::cf104::console::{
-    altimeter::update_altimeter, clock::update_clock, gyro_compass::update_compass_gyro, radio::{deferred_fx_change, load_channels, set_up_radio_audio, update_fx_selector, update_radio, update_volume_knob, DeferredFxChange, Radio, RadioChannelConfig, RadioChannelLoader, RadioChannels, UpdateRadioFx, UpdateVolume}, speedometer::update_speedometer
+    altimeter::update_altimeter,
+    clock::update_clock,
+    gyro_compass::update_compass_gyro,
+    radio::{
+        DeferredFxChange, Radio, RadioChannelConfig, RadioChannelLoader, RadioChannels,
+        UpdateRadioFx, UpdateVolume, deferred_fx_change, load_channels, set_up_radio_audio,
+        update_fx_selector, update_radio, update_volume_knob,
+    },
+    speedometer::update_speedometer,
 };
 
 pub mod altimeter;
@@ -38,7 +46,7 @@ impl Plugin for ConsolePlugin {
                     update_fx_selector,
                     update_volume_knob,
                     update_radio,
-                    deferred_fx_change
+                    deferred_fx_change,
                 ),
             )
             .add_systems(Startup, load_channels)

@@ -26,9 +26,14 @@ use bevy::{
 
 use crate::{
     cf104::{
-        console::{radio::{RadioFxSelector, RadioVolume, UpdateRadioFx, UpdateVolume}, throttle::Throttle, RotRange}, CanopyDoor, CanopyDoorHandle, Joystick, RotRange2D
+        CanopyDoor, CanopyDoorHandle, Joystick, RotRange2D,
+        console::{
+            RotRange,
+            radio::{RadioFxSelector, RadioVolume, UpdateRadioFx, UpdateVolume},
+            throttle::Throttle,
+        },
     },
-    player::{camera::OutlineCamera, Focused, Player, Selectable, Selected},
+    player::{Focused, Player, Selectable, Selected, camera::OutlineCamera},
     projectile::{BrakeForce, Grounded, Projectile, SteeringWheel},
 };
 
@@ -292,8 +297,7 @@ pub fn select_tool(
     mut selectable_query: Query<(Entity, &ChildOf, Option<&Selected>), (With<Selectable>)>,
 
     remove_query: Query<&Children, (With<Selected>, Without<Selectable>)>,
-
-    mut gizmos: Gizmos, // add gizmos resource
+    // mut gizmos: Gizmos, // add gizmos resource
 ) {
     // TODO - check if in play mode
     for event in mouse_button_events.read() {
@@ -306,9 +310,8 @@ pub fn select_tool(
         let origin = camera_transform.translation();
         let dir = camera_transform.forward();
         let ray: Ray3d = Ray3d::new(origin, dir);
-        let end = origin + dir * 50.0;
 
-        gizmos.line(origin, end, Color::LinearRgba(LinearRgba::RED));
+        // gizmos.line(origin, end, Color::LinearRgba(LinearRgba::RED));
         if let Some((entity, hit)) = raycast
             .cast_ray(ray, &MeshRayCastSettings::default())
             .iter()
@@ -581,22 +584,28 @@ pub fn radio_fx_controller(
     for (entity, mut radio_selector) in radio_fx_selectors {
         let (left, right) = (arms.0 == Some(entity), arms.1 == Some(entity));
         match (
-            (left, keybindings.left_arm.up.state, keybindings.left_arm.down.state),
-            (right, keybindings.right_arm.up.state, keybindings.right_arm.down.state),
+            (
+                left,
+                keybindings.left_arm.up.state,
+                keybindings.left_arm.down.state,
+            ),
+            (
+                right,
+                keybindings.right_arm.up.state,
+                keybindings.right_arm.down.state,
+            ),
         ) {
             ((true, KeyState::Pressed, _), _) | (_, (true, KeyState::Pressed, _)) => {
                 radio_selector.0 = (radio_selector.0 + 1) % 28;
-                
+
                 radio_fx_writer.write(UpdateRadioFx(radio_selector.0));
-            },
+            }
             ((true, _, KeyState::Pressed), _) | (_, (true, _, KeyState::Pressed)) => {
                 radio_selector.0 = radio_selector.0.checked_sub(1).unwrap_or(27);
 
                 radio_fx_writer.write(UpdateRadioFx(radio_selector.0));
-            },
-            _ => {
-
             }
+            _ => {}
         }
     }
 }
@@ -606,27 +615,34 @@ pub fn radio_volume_controller(
     arms: Res<Arms>,
     keybindings: Res<KeyBindings>,
     radio_fx_selectors: Query<(Entity, &mut RadioVolume), With<Selected>>,
-    mut radio_volume_writer: MessageWriter<UpdateVolume>
+    mut radio_volume_writer: MessageWriter<UpdateVolume>,
 ) {
     const SPEED: f32 = 30.;
     for (entity, mut radio_volume) in radio_fx_selectors {
         let (left, right) = (arms.0 == Some(entity), arms.1 == Some(entity));
         match (
-            (left, keybindings.left_arm.up.state, keybindings.left_arm.down.state),
-            (right, keybindings.right_arm.up.state, keybindings.right_arm.down.state),
+            (
+                left,
+                keybindings.left_arm.up.state,
+                keybindings.left_arm.down.state,
+            ),
+            (
+                right,
+                keybindings.right_arm.up.state,
+                keybindings.right_arm.down.state,
+            ),
         ) {
-            ((true, KeyState::Pressed | KeyState::Held, _), _) | (_, (true, KeyState::Pressed | KeyState::Held, _)) => {
+            ((true, KeyState::Pressed | KeyState::Held, _), _)
+            | (_, (true, KeyState::Pressed | KeyState::Held, _)) => {
                 radio_volume.0 = (radio_volume.0 + time.delta_secs() * SPEED).min(100.);
                 radio_volume_writer.write(UpdateVolume(radio_volume.0));
-            },
-            ((true, _, KeyState::Pressed | KeyState::Held), _) | (_, (true, _, KeyState::Pressed | KeyState::Held)) => {
+            }
+            ((true, _, KeyState::Pressed | KeyState::Held), _)
+            | (_, (true, _, KeyState::Pressed | KeyState::Held)) => {
                 radio_volume.0 = (radio_volume.0 - time.delta_secs() * SPEED).max(0.);
                 radio_volume_writer.write(UpdateVolume(radio_volume.0));
-
-            },
-            _ => {
-
             }
+            _ => {}
         }
     }
 }

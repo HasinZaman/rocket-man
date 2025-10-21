@@ -158,7 +158,8 @@ pub fn get_temperature(
 ) -> f32 {
     const DEFAULT_SURFACE_TEMP: f32 = 30.0;
 
-    let surface_temperature: f32 = celsius_to_kelvin(find(lat, lon, meta, &temperature.0).unwrap_or(DEFAULT_SURFACE_TEMP));
+    let surface_temperature: f32 =
+        celsius_to_kelvin(find(lat, lon, meta, &temperature.0).unwrap_or(DEFAULT_SURFACE_TEMP));
 
     if altitude <= 11_000.0 {
         surface_temperature - 0.0065 * altitude
@@ -177,7 +178,8 @@ pub fn get_pressure(
 ) -> f32 {
     const DEFAULT_SURFACE_PRESSURE: f32 = 101_325.0;
 
-    let surface_pressure_pa: f32 = find(lat, lon, meta, &pressure.0).unwrap_or(DEFAULT_SURFACE_PRESSURE);
+    let surface_pressure_pa: f32 =
+        find(lat, lon, meta, &pressure.0).unwrap_or(DEFAULT_SURFACE_PRESSURE);
 
     // let temperature: f32 = get_temperature(lat, lon, altitude, meta, temperature);
 
