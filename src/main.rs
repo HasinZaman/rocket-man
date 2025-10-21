@@ -4,7 +4,7 @@ use crate::{
     cf104::CF104Plugin,
     player::{
         Player, PlayerPlugin,
-        camera::OutlineCamera,
+        camera::{CameraShake, OutlineCamera},
         controls::{KeyBindings, KeyState},
     },
     projectile::ProjectilePlugin,
@@ -18,7 +18,7 @@ pub mod world;
 pub mod projectile;
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_plugins(WorldPlugin)
         .add_plugins(PlayerPlugin)
         .add_plugins(CF104Plugin)
@@ -30,7 +30,7 @@ fn main() {
 pub fn debug_camera_control(
     time: Res<Time>,
     keybindings: Res<KeyBindings>,
-    mut cam_query: Query<&mut Transform, With<Player>>,
+    mut cam_query: Query<&mut Transform, With<CameraShake>>,
 ) {
     let dt = time.delta_secs();
     let move_speed = 25.0;

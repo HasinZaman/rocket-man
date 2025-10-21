@@ -17,3 +17,4 @@ ron = "0.11.0"
 serde = { version = "1", features = ["derive"] }
 lewton = "0.10"
 thiserror = "2"
+i_overlay = "4.1.0"
