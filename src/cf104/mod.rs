@@ -205,7 +205,7 @@ fn load_cf104<const PLAYER: bool>(
             Player,
             Plane,
             GroundedBundle::cf_104(),
-            PlaneBundle::cf_104(),
+            PlaneBundle::cf_104(transform.translation.clone()),
             transform,
         ))
         .id();
@@ -592,6 +592,7 @@ fn load_cf104<const PLAYER: bool>(
                     z: 0.9261799454689026,
                 };
                 spawn_altimeter::<0, 1, 2, 3, 5>(
+                    parent_id,
                     transform,
                     commands,
                     asset_server,

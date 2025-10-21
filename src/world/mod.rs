@@ -1,21 +1,16 @@
-use std::f32::consts::{FRAC_PI_2, PI};
+use std::f32::consts::FRAC_PI_2;
 
 use bevy::{
-    app::{Plugin, Startup},
+    app::{FixedUpdate, Plugin, Startup},
     asset::{AssetServer, Assets},
     camera::{Camera, ClearColor},
-    color::{Color, LinearRgba, Srgba},
+    color::{Color, Srgba},
     ecs::{
-        hierarchy::ChildOf,
-        query::{With, Without},
-        system::{Commands, Query, Res, ResMut, Single},
+        entity::Entity, query::{With, Without}, resource::Resource, system::{Commands, Query, Res, ResMut, Single}
     },
     light::{AmbientLight, DirectionalLight},
-    math::{
-        Quat, Vec3,
-        primitives::{Circle, Plane3d},
-    },
-    mesh::{Mesh, Mesh3d, Meshable},
+    math::{primitives::Circle, Quat, Vec3},
+    mesh::{Mesh, Mesh3d},
     pbr::{MeshMaterial3d, StandardMaterial},
     prelude::Component,
     transform::components::{GlobalTransform, Transform},
@@ -26,17 +21,61 @@ use crate::{player::Player, world::lahr::spawn_lahr_airbase};
 
 mod lahr;
 
+#[derive(Resource, Default)]
+pub struct MovingOrigin(pub Option<Entity>);
+
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct GlobalPosition {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+}
+
 pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut bevy::app::App) {
         app.insert_resource(ClearColor(Color::srgb(0.02, 0.02, 0.08)))
+            .init_resource::<MovingOrigin>()
             .add_systems(
                 Startup,
                 (setup_world, spawn_lahr_airbase, sky_box_follow_camera),
-            );
+            )
+            .add_systems(FixedUpdate, moving_origin);
     }
 }
+
+fn moving_origin(
+    center: Res<MovingOrigin>,
+    query: Query<(Entity, &mut Transform, &GlobalPosition)>
+) {
+    let Some(center_entity) = center.0 else {
+        return;
+    };
+
+    let center = {
+        let Ok((_, _, center)) = query.get(center_entity) else {
+            panic!("Invalid state");
+            // return;
+        };
+
+        center.clone()
+    };
+    
+    for (entity, mut transform, global_position) in query {
+        let new_translation: Vec3 = Vec3 {
+            x: (global_position.x - center.x) as f32,
+            y: (global_position.y - center.y) as f32,
+            z: (global_position.z - center.z) as f32,
+        };
+
+        println!("({entity:?}) := {global_position:?} - {center:?} = {new_translation:?}");
+
+        transform.translation = new_translation;
+        
+    }
+}
+
 
 #[derive(Component)]
 pub struct Skybox;
@@ -72,6 +111,7 @@ pub fn setup_world(
             alpha: 1.,
         }))),
         Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+        GlobalPosition { x: 0., y: 0., z: 0. }
     ));
 }
 

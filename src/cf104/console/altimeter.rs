@@ -2,25 +2,31 @@ use std::f32::consts::TAU;
 
 use bevy::{camera::visibility::NoFrustumCulling, prelude::*};
 
-use crate::cf104::CF104_CONSOLE_ASSET_PATH;
+use crate::{cf104::CF104_CONSOLE_ASSET_PATH, world::GlobalPosition};
 
 #[derive(Component)]
-pub struct Altimeter(Entity, Entity, Entity, Entity);
+pub struct Altimeter(Entity, Entity, Entity, Entity, Entity);
 
 #[derive(Component)]
 pub struct AltimeterTmp;
 
 pub fn update_altimeter(
-    altimeter_query: Query<(&Altimeter, &GlobalTransform)>,
+    parent_query: Query<&GlobalPosition>,
+    altimeter_query: Query<(&Altimeter)>,
     mut transform_query: Query<&mut Transform, (With<AltimeterTmp>, Without<Altimeter>)>,
 ) {
     let wheel_offset: f32 = 200.0_f32.to_radians();
 
-    for (altimeter, global_transform) in &altimeter_query {
-        let altitude: f32 = (global_transform.translation().y + 156.) * 3.28084;
+    for altimeter in &altimeter_query {
 
-        let (wheel_10k, wheel_1k, wheel_100, needle) =
-            (altimeter.0, altimeter.1, altimeter.2, altimeter.3);
+        let (target, wheel_10k, wheel_1k, wheel_100, needle) =
+            (altimeter.0, altimeter.1, altimeter.2, altimeter.3, altimeter.4);
+
+        let Ok(parent) = parent_query.get(target) else {
+            panic!("Invalid state")
+        };
+
+        let altitude: f32 = (parent.y as f32 + 156.) * 3.28084;
 
         if let Ok(mut transform) = transform_query.get_mut(wheel_10k) {
             let angle = -(altitude / 10_000_00.0) * TAU + wheel_offset;
@@ -51,6 +57,7 @@ pub fn spawn_altimeter<
     const NEEDLE: usize,
     const FRAME: usize,
 >(
+    plane_id: Entity,
     parent_transform: Transform,
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
@@ -197,7 +204,7 @@ pub fn spawn_altimeter<
         .spawn((
             Mesh3d(mesh.clone()),
             MeshMaterial3d(material_handle.clone()),
-            Altimeter(wheel_1, wheel_2, wheel_3, needle),
+            Altimeter(plane_id, wheel_1, wheel_2, wheel_3, needle),
             NoFrustumCulling,
             parent_transform,
             ChildOf(parent_id),

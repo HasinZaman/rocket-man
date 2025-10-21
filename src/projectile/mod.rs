@@ -10,7 +10,7 @@ use bevy::{
         component::Component,
         entity::Entity,
         query::{With, Without},
-        system::{Commands, Query, Res, Single},
+        system::{Commands, Query, Res, ResMut, Single},
     },
     math::{Dir3, EulerRot, Quat, Vec2, Vec3},
     prelude::{Deref, DerefMut},
@@ -21,22 +21,29 @@ use bevy::{
 use crate::{
     cf104::{console::throttle::Throttle, Joystick},
     projectile::{
-        control_surfaces::{apply_angular_damping, update_angular_projectile_velocity}, drag::{drag_force, update_cross_section, CrossSectionArea, Drag}, engine::Engine, lift::lift_force, mass::{
+        control_surfaces::{apply_angular_damping, update_angular_projectile_velocity},
+        drag::{drag_force, update_cross_section, CrossSectionArea, Drag},
+        engine::Engine,
+        lift::lift_force,
+        mass::{
             get_weight, update_fuel_mass_system, update_tank_flow_rate, ExternalTank, Mass, MassBundle, MassComponent, MassData, Tank
-        }, util::{air_density, altitude, get_lat, get_lon, GRAVITY}, weather::{
+        },
+        util::{air_density, altitude, get_lat, get_lon, GRAVITY},
+        weather::{
             get_pressure, get_temperature, get_wind, Pressure, Temperature, WeatherMeta, WeatherPlugin, Wind
-        }
-    },
+        },
+    }, world::{GlobalPosition, MovingOrigin},
 };
 
+pub mod control_surfaces;
 pub(crate) mod drag;
 pub mod engine;
-pub mod control_surfaces;
 pub(crate) mod lift;
 pub mod mass;
 pub mod util;
 
 pub mod weather;
+
 #[derive(Component, Debug)]
 pub struct Grounded;
 
@@ -48,9 +55,6 @@ pub struct Velocity(pub Vec3);
 
 #[derive(Component, Deref, DerefMut, Debug)]
 pub struct AngularVelocity(pub Vec3);
-
-#[derive(Component, Debug)]
-pub struct MomentOfInertia(pub f32);
 
 #[derive(Component, Debug)]
 pub struct DragCoefficient(pub f32);
@@ -96,10 +100,10 @@ impl GroundedBundle {
 
 #[derive(Bundle)]
 pub struct PlaneBundle {
+    pub position: GlobalPosition,
     pub projectile: Projectile,
     pub velocity: Velocity,
     pub angular_velocity: AngularVelocity,
-    pub moment_of_inertia: MomentOfInertia,
     pub mass: Mass,
     pub wing_area: WingArea,
     pub engine: Engine,
@@ -109,12 +113,12 @@ pub struct PlaneBundle {
 }
 
 impl PlaneBundle {
-    pub fn cf_104() -> Self {
+    pub fn cf_104(position: Vec3) -> Self {
         Self {
+            position: GlobalPosition{x: position.x as f64, y: position.y as f64, z: position.z as f64},
             projectile: Projectile,
             velocity: Velocity(Vec3::ZERO),
             angular_velocity: AngularVelocity(Vec3::ZERO),
-            moment_of_inertia: MomentOfInertia(0.0),
             mass: Mass::default(),
             wing_area: WingArea(18.2),
             engine: Engine::cf104(),
@@ -197,6 +201,7 @@ pub fn update_projectile_velocity(
     mut query: Query<
         (
             &mut Velocity,
+            &GlobalPosition,
             &Transform,
             &Mass,
             &CrossSectionArea,
@@ -209,7 +214,7 @@ pub fn update_projectile_velocity(
 ) {
     const LIFT_COEFFICIENT: f32 = 0.8;
 
-    for (mut velocity, transform, masses, cross_section, wing_area, engine) in &mut query {
+    for (mut velocity, position, transform, masses, cross_section, wing_area, engine) in &mut query {
         let dt = time.delta_secs();
 
         let forward = transform.rotation * Vec3::X;
@@ -226,9 +231,9 @@ pub fn update_projectile_velocity(
         let mass: f32 = get_weight(masses, &mass_components);
 
         // positional_data
-        let lat: f32 = get_lat(transform.translation.x);
-        let lon: f32 = get_lon(transform.translation.z);
-        let altitude: f32 = altitude(transform.translation.y);
+        let lat: f32 = get_lat(position.x as f32); // get lat and lon takes in f64
+        let lon: f32 = get_lon(position.z as f32);
+        let altitude: f32 = altitude(position.y as f32);
 
         // weather data
         let temperature: f32 = get_temperature(lat, lon, altitude, &weather_meta, &temperature);
@@ -251,9 +256,9 @@ pub fn update_projectile_velocity(
         let acceleration = total_force / mass;
 
         velocity.0 += acceleration * dt;
-        
-        velocity.x+= wind.0;
-        velocity.z+= wind.1;
+
+        // velocity.x+= wind.0;
+        // velocity.z+= wind.1;
 
         // let max_speed = 590.0;
         // if vel.0.length() > max_speed {
@@ -265,9 +270,12 @@ pub fn update_projectile_velocity(
         }
 
         println!(
-            "pos: {:#?} rot: {:#?}",
+            "pos: {:#?} rot: {:#?}\n lat:{:?} lon: {:?} altitude: {:?}",
             &transform.translation,
-            &transform.rotation.to_euler(EulerRot::XYZ)
+            &transform.rotation.to_euler(EulerRot::XYZ),
+            lat,
+            lon,
+            altitude
         );
         println!(
             "Velocity: {}, Total Force: {}",
@@ -286,6 +294,7 @@ pub fn update_projectile_velocity(
 
 pub fn update_grounded_velocity(
     time: Res<Time>,
+    mut moving_center: ResMut<MovingOrigin>,
 
     //weather data
     weather_meta: Res<WeatherMeta>,
@@ -301,6 +310,7 @@ pub fn update_grounded_velocity(
             &BrakeForce,
             &SteeringWheel,
             &Transform,
+            &mut GlobalPosition,
             &Mass,
             &CrossSectionArea,
             &WingArea,
@@ -312,7 +322,18 @@ pub fn update_grounded_velocity(
 ) {
     const ROLLING_RESISTANCE: f32 = 0.8;
 
-    for (entity, mut velocity, brake, wheel, transform, masses, cross_section, wing_area, engine) in
+    for (
+        entity,
+        mut velocity,
+        brake,
+        wheel,
+        transform,
+        mut position,
+        masses,
+        cross_section,
+        wing_area,
+        engine
+    ) in
         &mut query
     {
         let dt = time.delta_secs();
@@ -328,9 +349,11 @@ pub fn update_grounded_velocity(
             forward
         };
         // positional_data
-        let lat: f32 = get_lat(transform.translation.x);
-        let lon: f32 = get_lon(transform.translation.z);
-        let altitude: f32 = altitude(transform.translation.y);
+        let lat: f32 = get_lat(position.x as f32); // get lat and lon takes in f64
+        let lon: f32 = get_lon(position.z as f32);
+        let altitude: f32 = altitude(position.y as f32);
+
+
 
         // weather data
         let temperature: f32 = get_temperature(lat, lon, altitude, &weather_meta, &temperature);
@@ -375,8 +398,8 @@ pub fn update_grounded_velocity(
         // Prevent negative vertical velocity while grounded
         velocity.y = velocity.y.max(0.0);
 
-        velocity.x+= wind.0;
-        velocity.z+= wind.1;
+        // velocity.x+= wind.0;
+        // velocity.z+= wind.1;
 
         // let max_speed = 590.0;
         // if velocity.0.length() > max_speed {
@@ -399,6 +422,13 @@ pub fn update_grounded_velocity(
         );
 
         if velocity.y > 0.0 {
+            position.x = transform.translation.x as f64;
+            position.y = transform.translation.y as f64;
+            position.z = transform.translation.z as f64;
+
+            // TODO! - only do this if the entity is the player
+            moving_center.0 = Some(entity);
+
             commands.entity(entity).remove::<Grounded>();
             println!("✈️  Takeoff! The CF-104 is airborne.");
         }
@@ -407,18 +437,28 @@ pub fn update_grounded_velocity(
 
 pub fn update_transform(
     time: Res<Time>,
-    mut query: Query<(&mut Transform, &Velocity, &AngularVelocity)>,
+    center: Res<MovingOrigin>,
+    mut query: Query<(&mut Transform, &mut GlobalPosition, &Velocity, &AngularVelocity)>,
 ) {
     let dt = time.delta_secs();
 
-    for (mut transform, velocity, angular_velocity) in &mut query {
-        transform.translation += velocity.0 * dt;
+    for (mut transform, mut position, velocity, angular_velocity) in &mut query {
+        position.x += (velocity.x * dt) as f64;
+        position.y += (velocity.y * dt) as f64;
+        position.z += (velocity.z * dt) as f64;
+
+        if center.0.is_none() {
+            transform.translation += velocity.0 * dt;
+        }
+        println!("position: {position:?}");
+
+        // transform.translation += velocity.0 * dt;
 
         let omega = angular_velocity.0;
         if omega.length_squared() > 1e-8 {
-            let roll_angle: f32  = omega.x * dt;
+            let roll_angle: f32 = omega.x * dt;
             let pitch_angle: f32 = omega.z * dt;
-            let yaw_angle: f32   = omega.y * dt;
+            let yaw_angle: f32 = omega.y * dt;
 
             let right: Dir3 = transform.forward();
             let forward: Dir3 = transform.right();
