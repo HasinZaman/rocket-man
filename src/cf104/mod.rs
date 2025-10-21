@@ -1,4 +1,4 @@
-use std::f32::consts::{FRAC_PI_2, FRAC_PI_6, FRAC_PI_8, PI, TAU};
+use std::f32::consts::{FRAC_PI_2, PI};
 
 use bevy::{audio::Volume, camera::visibility::NoFrustumCulling, prelude::*, time::Stopwatch};
 
@@ -13,10 +13,14 @@ use crate::{
         throttle::{Throttle, spawn_throttle},
     },
     player::{
-        Player, Selectable,
-        camera::{MaskMaterials, mask_mesh, set_up_player_camera},
+        Player,
+        camera::{CameraShake, MaskMaterials, mask_mesh, set_up_player_camera},
     },
-    projectile::{Grounded, GroundedBundle, PlaneBundle, Velocity},
+    projectile::{
+        GroundedBundle, PlaneBundle,
+        drag::DragTarget,
+        mass::{ExternalFuelTankBundle, InternalFuelTankBundle, MassBundle},
+    },
 };
 
 pub mod console;
@@ -196,7 +200,7 @@ fn load_cf104<const PLAYER: bool>(
 
     tip_fuel_tanks: Option<f32>,
 ) -> Entity {
-    let body_id = commands
+    let parent_id = commands
         .spawn((
             Player,
             Plane,
@@ -205,9 +209,10 @@ fn load_cf104<const PLAYER: bool>(
             transform,
         ))
         .id();
+    // commands.entity(body_id).insert();
 
     // load body
-    let body_id = {
+    let (body_id, internal_tank) = {
         let parent_mesh_handle: Handle<Mesh> =
             asset_server.load(&format!("{CF104_BODY_ASSET_PATH}#Mesh{}/Primitive0", 11));
         let parent_material_handle = materials.add(StandardMaterial::default());
@@ -220,15 +225,27 @@ fn load_cf104<const PLAYER: bool>(
 
         transform.scale = Vec3::splat(1.);
 
-        commands
+        let id = commands
             .spawn((
-                Mesh3d(parent_mesh_handle),
+                Mesh3d(parent_mesh_handle.clone()),
                 NoFrustumCulling,
                 MeshMaterial3d(parent_material_handle),
                 transform,
-                ChildOf(body_id),
+                MassBundle::empty_cf_104(parent_id),
+                ChildOf(parent_id),
             ))
-            .id()
+            .id();
+
+        // add internal fuel
+        let internal_fuel_tank = commands
+            .spawn((InternalFuelTankBundle::new(2_608.0, parent_id), ChildOf(id)))
+            .id();
+
+        let nuke = commands
+            .spawn((MassBundle::nuke(parent_id), ChildOf(id)))
+            .id();
+
+        (id, internal_fuel_tank)
     };
     // engine_exhaust
     {
@@ -277,6 +294,7 @@ fn load_cf104<const PLAYER: bool>(
                 Mesh3d(mesh),
                 NoFrustumCulling,
                 MeshMaterial3d(material_handle),
+                DragTarget(parent_id),
                 transform,
             )
         };
@@ -284,6 +302,7 @@ fn load_cf104<const PLAYER: bool>(
         (
             Mesh3d(mesh),
             MeshMaterial3d(material_handle),
+            DragTarget(parent_id),
             NoFrustumCulling,
             transform,
             children![(canopy_window_bundle)],
@@ -328,6 +347,7 @@ fn load_cf104<const PLAYER: bool>(
                     },
                     CanopyDoor::open(),
                     transform,
+                    DragTarget(parent_id),
                     ChildOf(canopy_id),
                 ))
                 .id(),
@@ -336,6 +356,7 @@ fn load_cf104<const PLAYER: bool>(
                     Mesh3d(mesh),
                     MeshMaterial3d(materials.add(StandardMaterial::default())),
                     transform,
+                    DragTarget(parent_id),
                     ChildOf(canopy_id),
                 ))
                 .id(),
@@ -351,6 +372,7 @@ fn load_cf104<const PLAYER: bool>(
                     cull_mode: None,
                     ..default()
                 })),
+                DragTarget(parent_id),
                 Transform::default(),
                 ChildOf(door_id),
             )),
@@ -362,6 +384,7 @@ fn load_cf104<const PLAYER: bool>(
                     cull_mode: None,
                     ..default()
                 })),
+                DragTarget(parent_id),
                 Transform::default(),
                 ChildOf(door_id),
             )),
@@ -427,6 +450,7 @@ fn load_cf104<const PLAYER: bool>(
                 Mesh3d(mesh.clone()),
                 MeshMaterial3d(material_handle),
                 NoFrustumCulling,
+                DragTarget(parent_id),
                 transform,
                 ChildOf(canopy_id),
             ))
@@ -707,6 +731,7 @@ fn load_cf104<const PLAYER: bool>(
                     Mesh3d(mesh),
                     MeshMaterial3d(material_handle),
                     NoFrustumCulling,
+                    ExternalFuelTankBundle::new(454.0 * fuel_level, parent_id, internal_tank),
                     transform,
                     ChildOf(body_id),
                 )
@@ -731,6 +756,7 @@ fn load_cf104<const PLAYER: bool>(
 
                         transform
                     },
+                    CameraShake::default(),
                     ChildOf(shell_id),
                 ))
                 .id();
@@ -838,6 +864,6 @@ fn initialize_player(
         &mask_materials,
         meshes,
         &mut images,
-        Some(100.),
+        Some(1.),
     );
 }
