@@ -1,6 +1,6 @@
 [package]
-name = "game"
-version = "0.1.0"
+name = "rocket_man"
+version = "0.1.1"
 edition = "2024"
 
 # Enable a small amount of optimization in the dev profile.
