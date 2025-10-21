@@ -251,6 +251,9 @@ pub fn update_projectile_velocity(
         let acceleration = total_force / mass;
 
         velocity.0 += acceleration * dt;
+        
+        velocity.x+= wind.0;
+        velocity.z+= wind.1;
 
         // let max_speed = 590.0;
         // if vel.0.length() > max_speed {
@@ -371,6 +374,9 @@ pub fn update_grounded_velocity(
 
         // Prevent negative vertical velocity while grounded
         velocity.y = velocity.y.max(0.0);
+
+        velocity.x+= wind.0;
+        velocity.z+= wind.1;
 
         // let max_speed = 590.0;
         // if velocity.0.length() > max_speed {
