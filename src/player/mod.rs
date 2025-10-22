@@ -1,13 +1,16 @@
 use bevy::prelude::*;
 
 use crate::player::{
-    camera::{MaskMaterials, OutlineCamera, OutlineTexture, look_camera, setup_mask_materials},
+    camera::{
+        MaskMaterials, OutlineCamera, OutlineTexture, look_camera, setup_mask_materials,
+        update_fov, visualize_gs,
+    },
     controls::{
         Arms, KeyBindings, canopy_door_controller, grounded_controller, joystick_controller,
         radio_fx_controller, radio_volume_controller, select_tool, throttle_controller,
         update_key_bindings,
     },
-    ui::{center_cursor, fullscreen_startup, hide_cursor},
+    ui::{center_cursor, fullscreen_startup, set_up_ui},
 };
 
 pub mod camera;
@@ -28,12 +31,14 @@ impl Plugin for PlayerPlugin {
             .init_resource::<Arms>()
             .add_systems(
                 Startup,
-                (hide_cursor, fullscreen_startup, setup_mask_materials),
+                (set_up_ui, fullscreen_startup, setup_mask_materials),
             )
             .add_systems(
                 Update,
                 (
                     look_camera,
+                    visualize_gs,
+                    update_fov,
                     center_cursor,
                     check_camera_selection,
                     select_tool,
