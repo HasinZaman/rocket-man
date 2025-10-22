@@ -18,9 +18,13 @@ pub fn update_altimeter(
     let wheel_offset: f32 = 200.0_f32.to_radians();
 
     for altimeter in &altimeter_query {
-
-        let (target, wheel_10k, wheel_1k, wheel_100, needle) =
-            (altimeter.0, altimeter.1, altimeter.2, altimeter.3, altimeter.4);
+        let (target, wheel_10k, wheel_1k, wheel_100, needle) = (
+            altimeter.0,
+            altimeter.1,
+            altimeter.2,
+            altimeter.3,
+            altimeter.4,
+        );
 
         let Ok(parent) = parent_query.get(target) else {
             panic!("Invalid state")
