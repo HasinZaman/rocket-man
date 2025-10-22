@@ -6,8 +6,34 @@ pub fn fullscreen_startup(mut window: Single<&mut Window, With<PrimaryWindow>>) 
     window.mode = WindowMode::BorderlessFullscreen(MonitorSelection::Current);
 }
 
-pub fn hide_cursor(mut commands: Commands, mut cursor: Single<&mut CursorOptions>) {
+#[derive(Component)]
+pub struct BlackoutRedout;
+
+pub fn set_up_ui(mut commands: Commands, mut cursor: Single<&mut CursorOptions>) {
     cursor.visible = false;
+
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(0.0),
+            left: Val::Px(0.0),
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            ..Default::default()
+        },
+        ZIndex(0),
+        BackgroundGradient::from(RadialGradient {
+            stops: vec![
+                ColorStop::new(Color::srgba(0.0, 0.0, 0.0, 0.0), Val::Percent(0.0)),
+                ColorStop::new(Color::srgba(0.0, 0.0, 0.0, 0.0), Val::Percent(25.0)),
+                ColorStop::new(Color::srgba(0.0, 0.0, 0.0, 0.0), Val::Percent(50.0)),
+                ColorStop::new(Color::srgba(0.0, 0.0, 0.0, 1.0), Val::Percent(75.0)),
+                ColorStop::new(Color::srgba(0.0, 0.0, 0.0, 1.0), Val::Percent(100.0)),
+            ],
+            ..Default::default()
+        }),
+        BlackoutRedout,
+    ));
 
     commands.spawn((
         Node {
@@ -18,6 +44,7 @@ pub fn hide_cursor(mut commands: Commands, mut cursor: Single<&mut CursorOptions
             height: Val::Px(10.0),
             ..Default::default()
         },
+        ZIndex(1),
         BackgroundColor(Color::WHITE),
     ));
 }
