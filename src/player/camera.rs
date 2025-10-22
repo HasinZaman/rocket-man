@@ -70,26 +70,15 @@ pub fn setup_mask_materials(
 }
 
 #[derive(Component)]
-pub struct LeftSpeaker;
-
-#[derive(Component)]
-pub struct RightSpeaker;
+pub struct HeadSetSpeaker;
 
 #[derive(Component)]
 pub struct SpeakerSink;
 
 pub fn spawn_headset_with_speakers(commands: &mut Commands, parent: Entity) {
-    // LEFT SPEAKER
     commands.spawn((
-        LeftSpeaker,
-        Transform::from_translation(Vec3::new(-0.1, 0.0, 0.0)),
-        ChildOf(parent),
-    ));
-
-    // RIGHT SPEAKER
-    commands.spawn((
-        RightSpeaker,
-        Transform::from_translation(Vec3::new(0.1, 0.0, 0.0)),
+        HeadSetSpeaker,
+        Transform::IDENTITY,
         ChildOf(parent),
     ));
 }
@@ -352,10 +341,10 @@ pub fn visualize_gs(
             / GRAVITY
     };
 
-    println!(
-        "Total G-force experienced by pilot: {:.2} g",
-        vertical_g_force
-    );
+    // println!(
+    //     "Total G-force experienced by pilot: {:.2} g",
+    //     vertical_g_force
+    // );
 
     for gradient in black_out.0.iter_mut() {
         if let Gradient::Radial(RadialGradient { stops, .. }) = gradient {
