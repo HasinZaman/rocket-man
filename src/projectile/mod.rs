@@ -19,20 +19,23 @@ use bevy::{
 };
 
 use crate::{
-    cf104::{console::throttle::Throttle, Joystick},
+    cf104::{Joystick, console::throttle::Throttle},
     projectile::{
         control_surfaces::{apply_angular_damping, update_angular_projectile_velocity},
-        drag::{drag_force, update_cross_section, CrossSectionArea, Drag},
+        drag::{CrossSectionArea, Drag, drag_force, update_cross_section},
         engine::Engine,
         lift::lift_force,
         mass::{
-            get_weight, update_fuel_mass_system, update_tank_flow_rate, ExternalTank, Mass, MassBundle, MassComponent, MassData, Tank
+            ExternalTank, Mass, MassBundle, MassComponent, MassData, Tank, get_weight,
+            update_fuel_mass_system, update_tank_flow_rate,
         },
-        util::{air_density, altitude, get_lat, get_lon, GRAVITY},
+        util::{GRAVITY, air_density, altitude, get_lat, get_lon},
         weather::{
-            get_pressure, get_temperature, get_wind, Pressure, Temperature, WeatherMeta, WeatherPlugin, Wind
+            Pressure, Temperature, WeatherMeta, WeatherPlugin, Wind, get_pressure, get_temperature,
+            get_wind,
         },
-    }, world::{GlobalPosition, MovingOrigin},
+    },
+    world::{GlobalPosition, MovingOrigin},
 };
 
 pub mod control_surfaces;
@@ -49,6 +52,12 @@ pub struct Grounded;
 
 #[derive(Component, Debug)]
 pub struct Projectile;
+
+#[derive(Component, Default, Debug)]
+pub struct GForceCache {
+    pub net_force: Vec3,
+    pub mass: f32,
+}
 
 #[derive(Component, Deref, DerefMut, Debug)]
 pub struct Velocity(pub Vec3);
@@ -101,13 +110,13 @@ impl GroundedBundle {
 #[derive(Bundle)]
 pub struct PlaneBundle {
     pub position: GlobalPosition,
+    pub net_force: GForceCache,
     pub projectile: Projectile,
     pub velocity: Velocity,
     pub angular_velocity: AngularVelocity,
     pub mass: Mass,
     pub wing_area: WingArea,
     pub engine: Engine,
-
     pub drag: Drag,
     pub cross_section_area: CrossSectionArea,
 }
@@ -115,7 +124,12 @@ pub struct PlaneBundle {
 impl PlaneBundle {
     pub fn cf_104(position: Vec3) -> Self {
         Self {
-            position: GlobalPosition{x: position.x as f64, y: position.y as f64, z: position.z as f64},
+            position: GlobalPosition {
+                x: position.x as f64,
+                y: position.y as f64,
+                z: position.z as f64,
+            },
+            net_force: GForceCache::default(),
             projectile: Projectile,
             velocity: Velocity(Vec3::ZERO),
             angular_velocity: AngularVelocity(Vec3::ZERO),
@@ -201,6 +215,7 @@ pub fn update_projectile_velocity(
     mut query: Query<
         (
             &mut Velocity,
+            &mut GForceCache,
             &GlobalPosition,
             &Transform,
             &Mass,
@@ -212,20 +227,23 @@ pub fn update_projectile_velocity(
     >,
     mass_components: Query<&MassData, With<MassComponent>>,
 ) {
-    const LIFT_COEFFICIENT: f32 = 0.8;
-
-    for (mut velocity, position, transform, masses, cross_section, wing_area, engine) in &mut query {
+    for (
+        mut velocity,
+        mut g_force_cache,
+        position,
+        transform,
+        masses,
+        cross_section,
+        wing_area,
+        engine,
+    ) in &mut query
+    {
         let dt = time.delta_secs();
 
         let forward = transform.rotation * Vec3::X;
         let up = transform.rotation * Vec3::Y;
 
         let speed = velocity.length();
-        let velocity_dir = if speed > 0.001 {
-            velocity.normalize()
-        } else {
-            forward
-        };
 
         // mass
         let mass: f32 = get_weight(masses, &mass_components);
@@ -245,8 +263,6 @@ pub fn update_projectile_velocity(
         let thrust = engine.thrust_vector(transform);
 
         let drag_force = drag_force(cross_section.area, &velocity, temperature, pressure);
-        // let drag_force =
-        //     -velocity_dir * 0.5 * AIR_DENSITY * speed * speed * drag.0 * cross_section.0;
 
         let lift_force = lift_force(&forward, &velocity, &up, air_density(pressure, temperature));
 
@@ -256,6 +272,9 @@ pub fn update_projectile_velocity(
         let acceleration = total_force / mass;
 
         velocity.0 += acceleration * dt;
+
+        g_force_cache.net_force = total_force.clone();
+        g_force_cache.mass = mass;
 
         // velocity.x+= wind.0;
         // velocity.z+= wind.1;
@@ -332,9 +351,8 @@ pub fn update_grounded_velocity(
         masses,
         cross_section,
         wing_area,
-        engine
-    ) in
-        &mut query
+        engine,
+    ) in &mut query
     {
         let dt = time.delta_secs();
 
@@ -352,8 +370,6 @@ pub fn update_grounded_velocity(
         let lat: f32 = get_lat(position.x as f32); // get lat and lon takes in f64
         let lon: f32 = get_lon(position.z as f32);
         let altitude: f32 = altitude(position.y as f32);
-
-
 
         // weather data
         let temperature: f32 = get_temperature(lat, lon, altitude, &weather_meta, &temperature);
@@ -438,7 +454,12 @@ pub fn update_grounded_velocity(
 pub fn update_transform(
     time: Res<Time>,
     center: Res<MovingOrigin>,
-    mut query: Query<(&mut Transform, &mut GlobalPosition, &Velocity, &AngularVelocity)>,
+    mut query: Query<(
+        &mut Transform,
+        &mut GlobalPosition,
+        &Velocity,
+        &AngularVelocity,
+    )>,
 ) {
     let dt = time.delta_secs();
 

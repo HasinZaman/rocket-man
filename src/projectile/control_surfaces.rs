@@ -1,9 +1,17 @@
-use bevy::{ecs::{query::{With, Without}, system::{Query, Res, Single}}, math::Vec3, time::Time, transform::components::Transform};
+use bevy::{
+    ecs::{
+        query::{With, Without},
+        system::{Query, Res, Single},
+    },
+    math::Vec3,
+    time::Time,
+};
 
-use crate::{cf104::Joystick, player::controls::{KeyBindings, KeyState}, projectile::{AngularVelocity, Grounded, Projectile, Velocity}};
-
-
-
+use crate::{
+    cf104::Joystick,
+    player::controls::{KeyBindings, KeyState},
+    projectile::{AngularVelocity, Grounded, Projectile, Velocity},
+};
 
 pub fn update_angular_projectile_velocity(
     joystick: Single<&Joystick>,
@@ -17,13 +25,14 @@ pub fn update_angular_projectile_velocity(
     for (velocity, mut ang_vel) in &mut query {
         let input = joystick.0;
 
-        // Joystick pitch (Y) and roll (X)
         let pitch_input: f32 = input.y;
         let roll_input: f32 = input.x;
 
         // Pedal yaw
-        let left_pedal = keybindings.feet.left.state == KeyState::Held || keybindings.feet.left.state == KeyState::Pressed;
-        let right_pedal = keybindings.feet.right.state == KeyState::Held || keybindings.feet.right.state == KeyState::Pressed;
+        let left_pedal = keybindings.feet.left.state == KeyState::Held
+            || keybindings.feet.left.state == KeyState::Pressed;
+        let right_pedal = keybindings.feet.right.state == KeyState::Held
+            || keybindings.feet.right.state == KeyState::Pressed;
 
         let yaw_input: f32 = match (left_pedal, right_pedal) {
             (true, false) => -1.0,
@@ -31,9 +40,8 @@ pub fn update_angular_projectile_velocity(
             _ => 0.0,
         };
 
-        // Projectile’s forward speed
         let speed: f32 = velocity.length();
-        let speed_factor = 1.0 / (1.0 + speed * 0.01) + 0.01;
+        let speed_factor = 1.0 / (1.0 + speed * 0.01);
 
         ang_vel.0 = Vec3::new(
             roll_input * -ROLL_RATE * speed_factor,
@@ -44,7 +52,6 @@ pub fn update_angular_projectile_velocity(
         // println!("angular velocity: {:?}", ang_vel.0);
     }
 }
-
 
 pub fn apply_angular_damping(
     time: Res<Time>,
