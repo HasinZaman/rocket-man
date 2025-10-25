@@ -14,11 +14,9 @@ use bevy::{
     },
     gizmos::gizmos::Gizmos,
     input::{
-        ButtonState,
-        keyboard::{Key, KeyCode, KeyboardInput},
-        mouse::{MouseButton, MouseButtonInput},
+        keyboard::{Key, KeyCode, KeyboardInput}, mouse::{MouseButton, MouseButtonInput}, ButtonState
     },
-    math::{Ray3d, Vec2},
+    math::{Quat, Ray3d, Vec2},
     picking::mesh_picking::ray_cast::{MeshRayCast, MeshRayCastSettings},
     time::Time,
     transform::components::{GlobalTransform, Transform},
@@ -565,13 +563,14 @@ pub fn canopy_door_controller(
             door.0 = 0.;
 
             commands.entity(entity).remove::<CanopyDoorHandle>();
+
         }
+        let t: f32 = door.0 / 100.0;
 
-        let t = door.0 / 100.0;
+            
+        let target_rotation: Quat = range.min.slerp(range.max, t);
 
-        let target_rotation = range.min.slerp(range.max, t);
-
-        transform.rotation = transform.rotation.slerp(target_rotation, 0.15);
+        transform.rotation = target_rotation;
     }
 }
 
