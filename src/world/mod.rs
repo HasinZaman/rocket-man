@@ -1,4 +1,7 @@
-use std::f32::consts::FRAC_PI_2;
+use std::{
+    f32::consts::FRAC_PI_2,
+    ops::{Add, Sub},
+};
 
 use bevy::{
     app::{FixedUpdate, Plugin, Startup},
@@ -6,10 +9,13 @@ use bevy::{
     camera::{Camera, ClearColor},
     color::{Color, Srgba},
     ecs::{
-        entity::Entity, query::{With, Without}, resource::Resource, system::{Commands, Query, Res, ResMut, Single}
+        entity::Entity,
+        query::{With, Without},
+        resource::Resource,
+        system::{Commands, Query, Res, ResMut, Single},
     },
     light::{AmbientLight, DirectionalLight},
-    math::{primitives::Circle, Quat, Vec3},
+    math::{Quat, Vec3, primitives::Circle},
     mesh::{Mesh, Mesh3d},
     pbr::{MeshMaterial3d, StandardMaterial},
     prelude::Component,
@@ -17,9 +23,17 @@ use bevy::{
     utils::default,
 };
 
-use crate::{player::Player, world::lahr::spawn_lahr_airbase};
+use crate::{
+    player::Player,
+    world::{
+        ground::GroundPlugin,
+        props::{PropPlugin, SpawnPropsMessage},
+    },
+};
 
-mod lahr;
+mod ground;
+mod props;
+pub mod util;
 
 #[derive(Resource, Default)]
 pub struct MovingOrigin(pub Option<Entity>);
@@ -31,23 +45,67 @@ pub struct GlobalPosition {
     pub z: f64,
 }
 
+impl Sub<GlobalPosition> for GlobalPosition {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        GlobalPosition {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+            z: self.z - rhs.z,
+        }
+    }
+}
+impl Add<GlobalPosition> for GlobalPosition {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        GlobalPosition {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+            z: self.z + rhs.z,
+        }
+    }
+}
+
+impl GlobalPosition {
+    pub fn zero() -> Self {
+        GlobalPosition {
+            x: 0.,
+            y: 0.,
+            z: 0.,
+        }
+    }
+    pub fn splat(val: f64) -> Self {
+        GlobalPosition {
+            x: val,
+            y: val,
+            z: val,
+        }
+    }
+
+    pub fn dist(&self, other: &Self) -> f64 {
+        let (x_delta, y_delta, z_delta) = (self.x - other.x, self.y - other.y, self.z - other.z);
+
+        (x_delta * x_delta + y_delta * y_delta + z_delta * z_delta).sqrt()
+    }
+}
+
 pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut bevy::app::App) {
-        app.insert_resource(ClearColor(Color::srgb(0.02, 0.02, 0.08)))
+        app.add_plugins((GroundPlugin, PropPlugin))
+            .insert_resource(ClearColor(Color::srgb(0.02, 0.02, 0.08)))
             .init_resource::<MovingOrigin>()
-            .add_systems(
-                Startup,
-                (setup_world, spawn_lahr_airbase, sky_box_follow_camera),
-            )
+            .add_systems(Startup, (setup_world, sky_box_follow_camera))
             .add_systems(FixedUpdate, moving_origin);
     }
 }
 
 fn moving_origin(
     center: Res<MovingOrigin>,
-    query: Query<(Entity, &mut Transform, &GlobalPosition)>
+    query: Query<(Entity, &mut Transform, &GlobalPosition)>,
 ) {
     let Some(center_entity) = center.0 else {
         return;
@@ -61,7 +119,7 @@ fn moving_origin(
 
         center.clone()
     };
-    
+
     for (entity, mut transform, global_position) in query {
         let new_translation: Vec3 = Vec3 {
             x: (global_position.x - center.x) as f32,
@@ -69,13 +127,11 @@ fn moving_origin(
             z: (global_position.z - center.z) as f32,
         };
 
-        println!("({entity:?}) := {global_position:?} - {center:?} = {new_translation:?}");
+        // println!("({entity:?}) := {global_position:?} - {center:?} = {new_translation:?}");
 
         transform.translation = new_translation;
-        
     }
 }
-
 
 #[derive(Component)]
 pub struct Skybox;
@@ -102,17 +158,21 @@ pub fn setup_world(
         Transform::from_xyz(-10.0, 20.0, -10.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
-    commands.spawn((
-        Mesh3d(meshes.add(Circle::new(100_000.0))),
-        MeshMaterial3d(materials.add(Color::Srgba(Srgba {
-            red: 0.,
-            green: 0.75,
-            blue: 0.,
-            alpha: 1.,
-        }))),
-        Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
-        GlobalPosition { x: 0., y: 0., z: 0. }
-    ));
+    // commands.spawn((
+    //     Mesh3d(meshes.add(Circle::new(100_000.0))),
+    //     MeshMaterial3d(materials.add(Color::Srgba(Srgba {
+    //         red: 0.,
+    //         green: 0.75,
+    //         blue: 0.,
+    //         alpha: 1.,
+    //     }))),
+    //     Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+    //     GlobalPosition {
+    //         x: 0.,
+    //         y: 0.,
+    //         z: 0.,
+    //     },
+    // ));
 }
 
 pub fn sky_box_follow_camera(
