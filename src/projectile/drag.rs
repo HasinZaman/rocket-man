@@ -180,7 +180,7 @@ pub fn update_cross_section(
                     }
                 }
                 total_area *= 148.6884931;
-                println!("{:?}", cross_section);
+                // println!("{:?}", cross_section);
 
                 drag_data.cache = AreaCache::Final { area: total_area };
 
@@ -191,7 +191,7 @@ pub fn update_cross_section(
                 drag_data.area = *area;
             }
         };
-        println!("{:?}", drag_data.area);
+        // println!("{:?}", drag_data.area);
     }
 }
 

@@ -29,13 +29,16 @@ use crate::{
             ExternalTank, Mass, MassBundle, MassComponent, MassData, Tank, get_weight,
             update_fuel_mass_system, update_tank_flow_rate,
         },
-        util::{GRAVITY, air_density, altitude, get_lat, get_lon},
+        util::{GRAVITY, air_density, altitude},
         weather::{
             Pressure, Temperature, WeatherMeta, WeatherPlugin, Wind, get_pressure, get_temperature,
             get_wind,
         },
     },
-    world::{GlobalPosition, MovingOrigin},
+    world::{
+        GlobalPosition, MovingOrigin,
+        util::{get_lat_f32, get_lon_f32},
+    },
 };
 
 pub mod control_surfaces;
@@ -249,8 +252,8 @@ pub fn update_projectile_velocity(
         let mass: f32 = get_weight(masses, &mass_components);
 
         // positional_data
-        let lat: f32 = get_lat(position.x as f32); // get lat and lon takes in f64
-        let lon: f32 = get_lon(position.z as f32);
+        let lat: f32 = get_lat_f32(position.x as f32); // get lat and lon takes in f64
+        let lon: f32 = get_lon_f32(position.z as f32);
         let altitude: f32 = altitude(position.y as f32);
 
         // weather data
@@ -288,26 +291,26 @@ pub fn update_projectile_velocity(
             panic!();
         }
 
-        println!(
-            "pos: {:#?} rot: {:#?}\n lat:{:?} lon: {:?} altitude: {:?}",
-            &transform.translation,
-            &transform.rotation.to_euler(EulerRot::XYZ),
-            lat,
-            lon,
-            altitude
-        );
-        println!(
-            "Velocity: {}, Total Force: {}",
-            vec3_fmt(velocity.0),
-            vec3_fmt(total_force)
-        );
-        println!(
-            "Engine Thrust: {}, Drag: {}, Gravity: {}, Lift: {}",
-            vec3_fmt(thrust),
-            vec3_fmt(drag_force),
-            vec3_fmt(gravity_force),
-            vec3_fmt(lift_force)
-        );
+        // println!(
+        //     "pos: {:#?} rot: {:#?}\n lat:{:?} lon: {:?} altitude: {:?}",
+        //     &transform.translation,
+        //     &transform.rotation.to_euler(EulerRot::XYZ),
+        //     lat,
+        //     lon,
+        //     altitude
+        // );
+        // println!(
+        //     "Velocity: {}, Total Force: {}",
+        //     vec3_fmt(velocity.0),
+        //     vec3_fmt(total_force)
+        // );
+        // println!(
+        //     "Engine Thrust: {}, Drag: {}, Gravity: {}, Lift: {}",
+        //     vec3_fmt(thrust),
+        //     vec3_fmt(drag_force),
+        //     vec3_fmt(gravity_force),
+        //     vec3_fmt(lift_force)
+        // );
     }
 }
 
@@ -367,8 +370,8 @@ pub fn update_grounded_velocity(
             forward
         };
         // positional_data
-        let lat: f32 = get_lat(position.x as f32); // get lat and lon takes in f64
-        let lon: f32 = get_lon(position.z as f32);
+        let lat: f32 = get_lat_f32(position.x as f32); // get lat and lon takes in f64
+        let lon: f32 = get_lon_f32(position.z as f32);
         let altitude: f32 = altitude(position.y as f32);
 
         // weather data
@@ -422,20 +425,20 @@ pub fn update_grounded_velocity(
         //     velocity.0 = vel.0.normalize() * max_speed;
         // }
 
-        println!(
-            "\nVelocity: {} | Total: {}",
-            vec3_fmt(velocity.0),
-            vec3_fmt(total_force)
-        );
-        println!(
-            "Thrust: {} | Brake: {} | RollRes: {} | Lift: {} | Drag: {} | Gravity: {}",
-            vec3_fmt(thrust),
-            vec3_fmt(brake_force),
-            vec3_fmt(rolling_resistance),
-            vec3_fmt(lift_force),
-            vec3_fmt(drag_force),
-            vec3_fmt(gravity_force),
-        );
+        // println!(
+        //     "\nVelocity: {} | Total: {}",
+        //     vec3_fmt(velocity.0),
+        //     vec3_fmt(total_force)
+        // );
+        // println!(
+        //     "Thrust: {} | Brake: {} | RollRes: {} | Lift: {} | Drag: {} | Gravity: {}",
+        //     vec3_fmt(thrust),
+        //     vec3_fmt(brake_force),
+        //     vec3_fmt(rolling_resistance),
+        //     vec3_fmt(lift_force),
+        //     vec3_fmt(drag_force),
+        //     vec3_fmt(gravity_force),
+        // );
 
         if velocity.y > 0.0 {
             position.x = transform.translation.x as f64;
@@ -471,7 +474,7 @@ pub fn update_transform(
         if center.0.is_none() {
             transform.translation += velocity.0 * dt;
         }
-        println!("position: {position:?}");
+        // println!("position: {position:?}");
 
         // transform.translation += velocity.0 * dt;
 

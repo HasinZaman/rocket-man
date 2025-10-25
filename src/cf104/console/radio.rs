@@ -8,13 +8,13 @@ use bevy::{camera::visibility::NoFrustumCulling, prelude::*};
 use lewton::VorbisError;
 use lewton::inside_ogg::OggStreamReader;
 use rand::seq::SliceRandom;
-use rand::{thread_rng, SeedableRng};
+use rand::{SeedableRng, thread_rng};
 use rand_chacha::ChaCha8Rng;
 use ron::de::SpannedError;
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::player::camera::{MaskMaterials, HeadSetSpeaker, SpeakerSink, mask_mesh};
+use crate::player::camera::{HeadSetSpeaker, MaskMaterials, SpeakerSink, mask_mesh};
 
 use crate::cf104::CF104_CONSOLE_ASSET_PATH;
 
@@ -185,7 +185,7 @@ pub enum LoadOrder {
 pub struct RadioChannelConfig {
     source: Option<(Vec3, f32)>,
     playables: Vec<Playable>,
-    load_order: LoadOrder
+    load_order: LoadOrder,
 }
 
 #[derive(Debug, Error)]
@@ -287,15 +287,15 @@ impl AssetLoader for RadioChannelLoader {
         config.playables.sort_by_key(|p| p.audio.clone());
 
         match config.load_order {
-            LoadOrder::Default => {},
+            LoadOrder::Default => {}
             LoadOrder::Random(seed) => {
                 let mut rng: ChaCha8Rng = ChaCha8Rng::seed_from_u64(seed);
                 config.playables.shuffle(&mut rng);
-            },
+            }
             LoadOrder::TimeRandom => {
                 let mut rng = rand::rng();
                 config.playables.shuffle(&mut rng);
-            },
+            }
         }
 
         Ok(config)
@@ -397,7 +397,11 @@ pub fn update_radio(
 
             let (start_idx, skip_duration) = {
                 let start_sec: f32 = radio.surpassed_time.as_secs_f32();
-                let loop_duration: f32 = new_channel_config.playables.iter().map(|p| p.duration).sum();
+                let loop_duration: f32 = new_channel_config
+                    .playables
+                    .iter()
+                    .map(|p| p.duration)
+                    .sum();
 
                 let loops: f32 = (start_sec / loop_duration).floor();
 
@@ -407,16 +411,18 @@ pub fn update_radio(
                 let mut skip_duration: f32 = 0.;
 
                 let mut sum = 0.;
-                
-                for (i1, Playable{duration, ..}) in new_channel_config.playables.iter().enumerate() {
+
+                for (i1, Playable { duration, .. }) in
+                    new_channel_config.playables.iter().enumerate()
+                {
                     if sum + duration > start_sec {
                         start_idx = i1;
                         skip_duration = start_sec - sum;
                         break;
                     }
-                    sum+=duration;
+                    sum += duration;
                 }
-                
+
                 (start_idx, skip_duration)
             };
             // println!("total_time: {:?}\tstart idx: {start_idx:?}\tskip: {skip_duration:?}\ttotal:{:?}",
@@ -442,7 +448,9 @@ pub fn update_radio(
                     PlaybackSettings::LOOP
                         .with_spatial(true)
                         .with_volume(Volume::Linear(volume.0 / 100. * 3.))
-                        .with_start_position(Duration::from_secs_f32(skip_duration-time.delta_secs())),
+                        .with_start_position(Duration::from_secs_f32(
+                            skip_duration - time.delta_secs(),
+                        )),
                     SpeakerSink,
                     Transform::IDENTITY,
                     ChildOf(entity),
@@ -450,12 +458,12 @@ pub fn update_radio(
             }
 
             radio.playable_duration = Timer::new(
-                    Duration::from_secs_f32(
-                    new_channel_config.playables[start_idx].duration,
-                ),
-                TimerMode::Once
+                Duration::from_secs_f32(new_channel_config.playables[start_idx].duration),
+                TimerMode::Once,
             );
-            radio.playable_duration.tick(Duration::from_secs_f32(skip_duration));
+            radio
+                .playable_duration
+                .tick(Duration::from_secs_f32(skip_duration));
 
             // println!("{:?} | {:?} | {:?}", radio.playable_duration.elapsed(), radio.playable_duration.fraction_remaining(), radio.playable_duration.duration());
 
@@ -494,12 +502,10 @@ pub fn update_radio(
                 ChildOf(entity),
             ));
         }
-        
+
         radio.playable_duration = Timer::new(
-                Duration::from_secs_f32(
-                channel_config.playables[idx].duration,
-            ),
-            TimerMode::Once
+            Duration::from_secs_f32(channel_config.playables[idx].duration),
+            TimerMode::Once,
         );
     };
 }

@@ -90,7 +90,7 @@ pub struct CloudCover {
     high: Vec<f32>,
 }
 
-pub fn find(lat: f32, lon: f32, meta: &Res<WeatherMeta>, data: &[f32]) -> Result<f32, ()> {
+pub(super) fn find(lat: f32, lon: f32, meta: &Res<WeatherMeta>, data: &[f32]) -> Result<f32, ()> {
     let lats = &meta.lats;
     let lons = &meta.lons;
 

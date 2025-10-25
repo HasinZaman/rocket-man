@@ -76,11 +76,7 @@ pub struct HeadSetSpeaker;
 pub struct SpeakerSink;
 
 pub fn spawn_headset_with_speakers(commands: &mut Commands, parent: Entity) {
-    commands.spawn((
-        HeadSetSpeaker,
-        Transform::IDENTITY,
-        ChildOf(parent),
-    ));
+    commands.spawn((HeadSetSpeaker, Transform::IDENTITY, ChildOf(parent)));
 }
 
 #[derive(Component)]
@@ -125,6 +121,14 @@ pub fn set_up_player_camera(
             .spawn((
                 Player,
                 camera,
+                DistanceFog {
+                    color: Color::srgb(0.08, 0.10, 0.15),
+                    falloff: FogFalloff::Linear {
+                        start: 2_000.0,
+                        end: 20_000.0,
+                    },
+                    ..default()
+                },
                 // Skybox {
                 //     image: skybox_handle.clone(),
                 //     brightness: 1000.0,
@@ -397,14 +401,8 @@ pub fn visualize_gs(
                     ),
                 ];
 
-                
                 for (mut min, max, mut speed) in fov_query.iter_mut() {
-                    update_fov_from_gs(
-                        vertical_g_force.abs(),
-                        &mut min,
-                        &max,
-                        &mut speed
-                    )
+                    update_fov_from_gs(vertical_g_force.abs(), &mut min, &max, &mut speed)
                 }
             } else {
                 const RED: f32 = 0.1;
@@ -457,12 +455,7 @@ pub fn visualize_gs(
                 ];
 
                 for (mut min, max, mut speed) in fov_query.iter_mut() {
-                    update_fov_from_gs(
-                        0.,
-                        &mut min,
-                        &max,
-                        &mut speed
-                    )
+                    update_fov_from_gs(0., &mut min, &max, &mut speed)
                 }
             }
         }
@@ -482,19 +475,31 @@ pub fn update_fov_from_gs(
 
     let half: f32 = max_range.1 + (max_range.0 - max_range.1) * 0.5;
 
-    min_range.0 = (-1. * half / (END - START) * (gs - START) + max_range.0).clamp(max_range.1, max_range.0);
-    
+    min_range.0 =
+        (-1. * half / (END - START) * (gs - START) + max_range.0).clamp(max_range.1, max_range.0);
+
     let half: f32 = 1. + (15. - 1.) * 0.5;
-    speed.0 = (-1. * half/(END-START)*(gs-START) + 15.).clamp(1., 15.);
+    speed.0 = (-1. * half / (END - START) * (gs - START) + 15.).clamp(1., 15.);
 }
 
 pub fn update_fov(
     time: Res<Time>,
-    camera_query: Query<(&mut Projection, &FOVGoal, &FOVMaxRange, &FOVMinRange, &FOVSpeed)>,
+    camera_query: Query<(
+        &mut Projection,
+        &FOVGoal,
+        &FOVMaxRange,
+        &FOVMinRange,
+        &FOVSpeed,
+    )>,
 ) {
     let delta_time = time.delta_secs();
-    for (mut projection, FOVGoal(goal), FOVMaxRange(min, max), FOVMinRange(inf, sup), FOVSpeed(speed)) in
-        camera_query
+    for (
+        mut projection,
+        FOVGoal(goal),
+        FOVMaxRange(min, max),
+        FOVMinRange(inf, sup),
+        FOVSpeed(speed),
+    ) in camera_query
     {
         if let Projection::Perspective(ref mut perspective) = *projection {
             let current_fov: f32 = perspective.fov;
