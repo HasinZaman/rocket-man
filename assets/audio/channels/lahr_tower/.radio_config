@@ -1,0 +1,12 @@
+Story(
+    source: None,
+    playables: [
+        (
+            Playable(
+                audio: "1.ogg",
+                duration: 0.0,
+            ),
+            10.0,
+        ),
+    ],
+)

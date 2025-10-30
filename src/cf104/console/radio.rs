@@ -1,4 +1,6 @@
 use std::f32::consts::TAU;
+use std::fs::File;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use bevy::asset::io::Reader;
@@ -182,10 +184,16 @@ pub enum LoadOrder {
     TimeRandom,
 }
 #[derive(Debug, Clone, Deserialize, TypePath, Asset)]
-pub struct RadioChannelConfig {
-    source: Option<(Vec3, f32)>,
-    playables: Vec<Playable>,
-    load_order: LoadOrder,
+pub enum RadioChannelConfig {
+    Music{
+        source: Option<(Vec3, f32)>,
+        playables: Vec<Playable>,
+        load_order: LoadOrder,
+    },
+    Story {
+        source: Option<(Vec3, f32)>,
+        playables: Vec<(Playable, f32)>,
+    }
 }
 
 #[derive(Debug, Error)]
@@ -222,80 +230,143 @@ impl AssetLoader for RadioChannelLoader {
             std::io::Error::new(std::io::ErrorKind::Other, "Failed to get directory")
         })?;
 
-        // Prepend ./assets so the OS can find the files
-        let full_dir_path = asset_root.join(dir_path);
+        let full_dir_path: PathBuf = asset_root.join(dir_path);
+        match &mut config {
+            RadioChannelConfig::Music {playables, load_order, .. } => {
+                for entry in std::fs::read_dir(&full_dir_path)? {
+                    let entry = entry?;
+                    let path = entry.path();
 
-        for entry in std::fs::read_dir(&full_dir_path)? {
-            let entry = entry?;
-            let path = entry.path();
+                    if path.extension().map(|s| s == "ogg").unwrap_or(false) {
+                        let filename = path.file_name().unwrap().to_string_lossy().to_string();
 
-            if path.extension().map(|s| s == "ogg").unwrap_or(false) {
-                let filename = path.file_name().unwrap().to_string_lossy().to_string();
+                        if playables.iter().any(|p| p.audio == filename) {
+                            continue;
+                        }
 
-                if config.playables.iter().any(|p| p.audio == filename) {
-                    continue;
-                }
+                        match File::open(&path) {
+                            Ok(file) => {
+                                match OggStreamReader::new(file) {
+                                    Ok(mut ogg_reader) => {
+                                        let sample_rate = ogg_reader.ident_hdr.audio_sample_rate;
+                                        let channels = ogg_reader.ident_hdr.audio_channels;
 
-                match std::fs::File::open(&path) {
-                    Ok(file) => {
-                        match OggStreamReader::new(file) {
-                            Ok(mut ogg_reader) => {
-                                let sample_rate = ogg_reader.ident_hdr.audio_sample_rate;
-                                let channels = ogg_reader.ident_hdr.audio_channels;
+                                        let mut total_samples = 0usize;
+                                        // let mut packet_count = 0usize;
 
-                                let mut total_samples = 0usize;
-                                // let mut packet_count = 0usize;
+                                        while let Some(pck) = ogg_reader.read_dec_packet_itl()? {
+                                            total_samples += pck.len() / channels as usize;
+                                            // packet_count += 1;
+                                        }
 
-                                while let Some(pck) = ogg_reader.read_dec_packet_itl()? {
-                                    total_samples += pck.len() / channels as usize;
-                                    // packet_count += 1;
+                                        let duration: f32 = total_samples as f32 / sample_rate as f32;
+
+                                        let full_path = path.canonicalize()?;
+                                        let asset_path = full_path
+                                            .to_string_lossy()
+                                            .replace("\\", "/") // normalize Windows paths
+                                            .split("assets/")
+                                            .nth(1) // take everything after "assets/"
+                                            .ok_or_else(|| {
+                                                std::io::Error::new(
+                                                    std::io::ErrorKind::Other,
+                                                    "Failed to strip assets prefix",
+                                                )
+                                            })?
+                                            .to_string();
+
+                                        playables.push(Playable {
+                                            audio: asset_path,
+                                            duration,
+                                        });
+                                    }
+                                    Err(e) => {
+                                        println!("❌ Failed to decode {}: {:?}", filename, e);
+                                    }
                                 }
-
-                                let duration: f32 = total_samples as f32 / sample_rate as f32;
-
-                                let full_path = path.canonicalize()?;
-                                let asset_path = full_path
-                                    .to_string_lossy()
-                                    .replace("\\", "/") // normalize Windows paths
-                                    .split("assets/")
-                                    .nth(1) // take everything after "assets/"
-                                    .ok_or_else(|| {
-                                        std::io::Error::new(
-                                            std::io::ErrorKind::Other,
-                                            "Failed to strip assets prefix",
-                                        )
-                                    })?
-                                    .to_string();
-
-                                config.playables.push(Playable {
-                                    audio: asset_path,
-                                    duration,
-                                });
                             }
                             Err(e) => {
-                                println!("❌ Failed to decode {}: {:?}", filename, e);
+                                println!("❌ Failed to open {}: {:?}", filename, e);
                             }
                         }
                     }
-                    Err(e) => {
-                        println!("❌ Failed to open {}: {:?}", filename, e);
+                }
+
+                playables.sort_by_key(|p| p.audio.clone());
+
+                match load_order {
+                    LoadOrder::Default => {}
+                    LoadOrder::Random(seed) => {
+                        let mut rng: ChaCha8Rng = ChaCha8Rng::seed_from_u64(*seed);
+                        playables.shuffle(&mut rng);
+                    }
+                    LoadOrder::TimeRandom => {
+                        let mut rng = rand::rng();
+                        playables.shuffle(&mut rng);
                     }
                 }
-            }
-        }
+        
+            },
+            RadioChannelConfig::Story { source, playables } => {
+                let mut new_playables = Vec::new();
+                for (playable, start_time) in playables.iter() {
+                    let mut file_path = full_dir_path.clone();
+                    file_path.push(playable.audio.clone());
 
-        config.playables.sort_by_key(|p| p.audio.clone());
+                    let file = File::open(&file_path)?;
 
-        match config.load_order {
-            LoadOrder::Default => {}
-            LoadOrder::Random(seed) => {
-                let mut rng: ChaCha8Rng = ChaCha8Rng::seed_from_u64(seed);
-                config.playables.shuffle(&mut rng);
-            }
-            LoadOrder::TimeRandom => {
-                let mut rng = rand::rng();
-                config.playables.shuffle(&mut rng);
-            }
+                    let mut ogg_reader: OggStreamReader<File> = OggStreamReader::new(file)?;
+
+                    let sample_rate = ogg_reader.ident_hdr.audio_sample_rate;
+                    let channels = ogg_reader.ident_hdr.audio_channels;
+
+                    let mut total_samples = 0usize;
+
+                    while let Some(pck) = ogg_reader.read_dec_packet_itl()? {
+                        total_samples += pck.len() / channels as usize;
+                    }
+
+                    let duration: f32 = total_samples as f32 / sample_rate as f32;
+
+                    let full_path: PathBuf = file_path.clone().canonicalize()?;
+                    let asset_path: String = full_path
+                        .to_string_lossy()
+                        .replace("\\", "/") // normalize Windows paths
+                        .split("assets/")
+                        .nth(1) // take everything after "assets/"
+                        .ok_or_else(|| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                "Failed to strip assets prefix",
+                            )
+                        })?
+                        .to_string();
+
+                    new_playables.push((
+                        Playable {
+                            audio: asset_path,
+                            duration,
+                        },
+                        *start_time
+                    ));
+                }
+                
+                *playables = new_playables;
+                //  playables.iter()
+                //     .cloned()
+                //     .map(|(mut playable, time_stamp)| {
+                //         playable.audio = format!(
+                //             "{}\\{}",
+                //             full_dir_path.as_os_str()
+                //                 .to_str()
+                //                 .unwrap(),
+                //             playable.audio
+                //         );
+
+                //         (playable, time_stamp)
+                //     })
+                //     .collect::<Vec<(Playable, f32)>>()
+            },
         }
 
         Ok(config)
@@ -310,6 +381,7 @@ impl AssetLoader for RadioChannelLoader {
 pub struct RadioChannels([Option<Handle<RadioChannelConfig>>; 28]);
 
 pub fn load_channels(mut channels: ResMut<RadioChannels>, asset_server: Res<AssetServer>) {
+    channels.0[4] = Some(asset_server.load("audio\\channels\\lahr_tower\\.radio_config"));
     channels.0[6] = Some(asset_server.load("audio\\channels\\channel_6\\.radio_config"));
     channels.0[10] = Some(asset_server.load("audio\\channels\\channel_10\\.radio_config"));
 }
@@ -361,13 +433,11 @@ pub fn update_radio(
                         continue;
                     };
                     for child in children {
-                        println!("de-spawning: {child:?}");
                         commands.entity(*child).despawn();
                     }
                 }
                 // replace sinks with static
                 for (entity, _) in head_sets_speakers_query.iter() {
-                    println!("spawning in: {entity:?}");
                     commands.spawn((
                         AudioPlayer::new(asset_server.load("audio/radio_static.ogg")),
                         PlaybackSettings::LOOP
@@ -395,80 +465,180 @@ pub fn update_radio(
             println!("{new_channel_config:?}");
             radio.handle = Some(new_channel_config.clone());
 
-            let (start_idx, skip_duration) = {
-                let start_sec: f32 = radio.surpassed_time.as_secs_f32();
-                let loop_duration: f32 = new_channel_config
-                    .playables
-                    .iter()
-                    .map(|p| p.duration)
-                    .sum();
+            match &new_channel_config {
+                RadioChannelConfig::Music { source, playables, load_order } => {
+                    let (start_idx, skip_duration) = {
+                        let start_sec: f32 = radio.surpassed_time.as_secs_f32();
+                        let loop_duration: f32 = playables
+                            .iter()
+                            .map(|p| p.duration)
+                            .sum();
 
-                let loops: f32 = (start_sec / loop_duration).floor();
+                        let loops: f32 = (start_sec / loop_duration).floor();
 
-                let start_sec: f32 = start_sec - loops * loop_duration;
+                        let start_sec: f32 = start_sec - loops * loop_duration;
 
-                let mut start_idx: usize = new_channel_config.playables.len() - 1;
-                let mut skip_duration: f32 = 0.;
+                        let mut start_idx: usize = playables.len() - 1;
+                        let mut skip_duration: f32 = 0.;
 
-                let mut sum = 0.;
+                        let mut sum = 0.;
 
-                for (i1, Playable { duration, .. }) in
-                    new_channel_config.playables.iter().enumerate()
-                {
-                    if sum + duration > start_sec {
-                        start_idx = i1;
-                        skip_duration = start_sec - sum;
-                        break;
+                        for (i1, Playable { duration, .. }) in
+                            playables.iter().enumerate()
+                        {
+                            if sum + duration > start_sec {
+                                start_idx = i1;
+                                skip_duration = start_sec - sum;
+                                break;
+                            }
+                            sum += duration;
+                        }
+
+                        (start_idx, skip_duration)
+        
+                    };
+                    // println!("total_time: {:?}\tstart idx: {start_idx:?}\tskip: {skip_duration:?}\ttotal:{:?}",
+                    // radio.surpassed_time, new_channel_config.playables[start_idx].duration);
+
+                    radio.idx = start_idx;
+
+                    // remove all sinks
+                    for (_, children) in head_sets_speakers_query.iter() {
+                        let Some(children) = children else {
+                            continue;
+                        };
+                        for child in children {
+                            commands.entity(*child).despawn();
+                        }
                     }
-                    sum += duration;
-                }
+                    // replace sinks with new audio
+                    for (entity, _) in head_sets_speakers_query.iter() {
+                        commands.spawn((
+                            AudioPlayer::new(
+                                asset_server.load(playables[start_idx].audio.clone()),
+                            ),
+                            PlaybackSettings::LOOP
+                                .with_spatial(true)
+                                .with_volume(Volume::Linear(volume.0 / 100. * 3.))
+                                .with_start_position(Duration::from_secs_f32(
+                                    skip_duration - time.delta_secs(),
+                                )),
+                            SpeakerSink,
+                            Transform::IDENTITY,
+                            ChildOf(entity),
+                        ));
+                    }
 
-                (start_idx, skip_duration)
-            };
-            // println!("total_time: {:?}\tstart idx: {start_idx:?}\tskip: {skip_duration:?}\ttotal:{:?}",
-            // radio.surpassed_time, new_channel_config.playables[start_idx].duration);
+                    radio.playable_duration = Timer::new(
+                        Duration::from_secs_f32(playables[start_idx].duration),
+                        TimerMode::Once,
+                    );
+                    radio
+                        .playable_duration
+                        .tick(Duration::from_secs_f32(skip_duration));
 
-            radio.idx = start_idx;
+                    // println!("{:?} | {:?} | {:?}", radio.playable_duration.elapsed(), radio.playable_duration.fraction_remaining(), radio.playable_duration.duration());
 
-            // remove all sinks
-            for (_, children) in head_sets_speakers_query.iter() {
-                let Some(children) = children else {
-                    continue;
-                };
-                for child in children {
-                    commands.entity(*child).despawn();
+                    radio_volume_write.write(UpdateVolume(volume.0));
+                    return;
+                },
+                RadioChannelConfig::Story { playables, .. } => {
+                    let (start_idx, skip_duration) = {
+                        let start_sec = radio.surpassed_time.as_secs_f32();
+
+                        let mut start_idx: usize = playables.len() * 2;
+                        let mut skip_duration: f32 = 0.;
+
+                        let mut sum = 0.;
+
+                        for (i1, (Playable { duration, .. }, start_delay)) in
+                            playables.iter().enumerate()
+                        {
+                            if sum + start_delay > start_sec{
+                                // play static
+                                start_idx = i1 * 2;
+                                skip_duration = sum + start_delay - start_sec;
+
+                                break
+                            }
+                            else if sum + start_delay + duration > start_sec {
+                                // play audio
+                                
+                                start_idx = i1 * 2 + 1;
+                                skip_duration = sum + start_delay + duration - start_sec;
+
+                                break
+                            }
+                            sum += start_delay + duration;
+                        }
+
+                        (start_idx, skip_duration)
+        
+                    };
+
+                    println!("start_idx: {start_idx:?}\t skip_duration:{skip_duration:?}");
+
+                    // Clear all sinks
+                    for (_, children) in head_sets_speakers_query.iter() {
+                        if let Some(children) = children {
+                            for child in children {
+                                commands.entity(*child).despawn();
+                            }
+                        }
+                    }
+                    radio.idx = start_idx;
+                    match start_idx % 2 == 0 {
+                        true => {
+                            println!("play static");
+                            // play static
+                            let idx: usize = start_idx / 2;
+
+                            for (entity, _) in head_sets_speakers_query.iter() {
+                                commands.spawn((
+                                    AudioPlayer::new(asset_server.load("audio/radio_static.ogg")),
+                                    PlaybackSettings::LOOP
+                                        .with_spatial(true)
+                                        .with_volume(Volume::Linear(volume.0 / 100. * 3.)),
+                                    SpeakerSink,
+                                    Transform::IDENTITY,
+                                    ChildOf(entity),
+                                ));
+                            }
+
+                            radio.playable_duration = Timer::new(
+                                Duration::from_secs_f32(
+                                    skip_duration
+                                ),
+                                TimerMode::Once,
+                            );
+                        }
+                        false => {
+                            // play audio
+                            let idx: usize = (start_idx - 1) / 2;
+                            
+                            for (entity, _) in head_sets_speakers_query.iter() {
+                                commands.spawn((
+                                    AudioPlayer::new(asset_server.load(playables[idx].0.audio.clone())),
+                                    PlaybackSettings::ONCE
+                                        .with_spatial(true)
+                                        .with_volume(Volume::Linear(volume.0 / 100. * 3.))
+                                        .with_start_position(Duration::from_secs_f32(skip_duration)),
+                                    SpeakerSink,
+                                    Transform::IDENTITY,
+                                    ChildOf(entity),
+                                ));
+                            }
+
+                            radio.playable_duration = Timer::new(
+                                Duration::from_secs_f32(skip_duration),
+                                TimerMode::Once,
+                            );
+                        }
+                    }
+                    radio_volume_write.write(UpdateVolume(volume.0));
+                    return;
                 }
             }
-            // replace sinks with new audio
-            for (entity, _) in head_sets_speakers_query.iter() {
-                commands.spawn((
-                    AudioPlayer::new(
-                        asset_server.load(new_channel_config.playables[start_idx].audio.clone()),
-                    ),
-                    PlaybackSettings::LOOP
-                        .with_spatial(true)
-                        .with_volume(Volume::Linear(volume.0 / 100. * 3.))
-                        .with_start_position(Duration::from_secs_f32(
-                            skip_duration - time.delta_secs(),
-                        )),
-                    SpeakerSink,
-                    Transform::IDENTITY,
-                    ChildOf(entity),
-                ));
-            }
-
-            radio.playable_duration = Timer::new(
-                Duration::from_secs_f32(new_channel_config.playables[start_idx].duration),
-                TimerMode::Once,
-            );
-            radio
-                .playable_duration
-                .tick(Duration::from_secs_f32(skip_duration));
-
-            // println!("{:?} | {:?} | {:?}", radio.playable_duration.elapsed(), radio.playable_duration.fraction_remaining(), radio.playable_duration.duration());
-
-            radio_volume_write.write(UpdateVolume(volume.0));
-            return;
         }
     }
 
@@ -479,34 +649,96 @@ pub fn update_radio(
         if !radio.playable_duration.is_finished() {
             return;
         };
-        println!("New audio");
-        radio.idx = (radio.idx + 1) % channel_config.playables.len();
-        let idx: usize = radio.idx;
+        match &channel_config {
+            RadioChannelConfig::Music { source, playables, load_order } => {
+                radio.idx = (radio.idx + 1) % playables.len();
+                let idx: usize = radio.idx;
 
-        for (_, children) in head_sets_speakers_query.iter() {
-            let Some(children) = children else {
-                continue;
-            };
-            for child in children {
-                commands.entity(*child).despawn();
+                for (_, children) in head_sets_speakers_query.iter() {
+                    let Some(children) = children else {
+                        continue;
+                    };
+                    for child in children {
+                        commands.entity(*child).despawn();
+                    }
+                }
+                for (entity, _) in head_sets_speakers_query.iter() {
+                    commands.spawn((
+                        AudioPlayer::new(asset_server.load(playables[idx].audio.clone())),
+                        PlaybackSettings::LOOP
+                            .with_spatial(true)
+                            .with_volume(Volume::Linear(volume.0 / 100. * 3.)),
+                        SpeakerSink,
+                        Transform::IDENTITY,
+                        ChildOf(entity),
+                    ));
+                }
+
+                radio.playable_duration = Timer::new(
+                    Duration::from_secs_f32(playables[idx].duration),
+                    TimerMode::Once,
+                );
+            },
+            RadioChannelConfig::Story { playables, .. } => {
+                radio.idx = radio.idx + 1;
+
+                if radio.idx > playables.len() * 2 {
+                    return;
+                }
+
+                for (_, children) in head_sets_speakers_query.iter() {
+                    if let Some(children) = children {
+                        for child in children {
+                            commands.entity(*child).despawn();
+                        }
+                    }
+                }
+                
+                match radio.idx % 2 == 0 {
+                    true => {
+                        // play static
+                        for (entity, _) in head_sets_speakers_query.iter() {
+                            commands.spawn((
+                                AudioPlayer::new(asset_server.load("audio/radio_static.ogg")),
+                                PlaybackSettings::LOOP
+                                    .with_spatial(true)
+                                    .with_volume(Volume::Linear(volume.0 / 100. * 3.)),
+                                SpeakerSink,
+                                Transform::IDENTITY,
+                                ChildOf(entity),
+                            ));
+                        }
+
+                        let idx: usize = radio.idx / 2;
+                        radio.playable_duration = Timer::new(
+                            Duration::from_secs_f32(playables.get(idx).map(|x| x.1).unwrap_or(10_000.)),
+                            TimerMode::Once,
+                        );
+                    },
+                    false => {
+                        // play sound
+                        let idx = (radio.idx - 1) / 2;
+                    
+                        for (entity, _) in head_sets_speakers_query.iter() {
+                            commands.spawn((
+                                AudioPlayer::new(asset_server.load(playables[idx].0.audio.clone())),
+                                PlaybackSettings::ONCE
+                                    .with_spatial(true)
+                                    .with_volume(Volume::Linear(volume.0 / 100. * 3.)),
+                                SpeakerSink,
+                                Transform::IDENTITY,
+                                ChildOf(entity),
+                            ));
+                        }
+
+                        radio.playable_duration = Timer::new(
+                            Duration::from_secs_f32(playables[idx].0.duration),
+                            TimerMode::Once,
+                        );
+                    }
+                }
             }
         }
-        for (entity, _) in head_sets_speakers_query.iter() {
-            commands.spawn((
-                AudioPlayer::new(asset_server.load(channel_config.playables[idx].audio.clone())),
-                PlaybackSettings::LOOP
-                    .with_spatial(true)
-                    .with_volume(Volume::Linear(volume.0 / 100. * 3.)),
-                SpeakerSink,
-                Transform::IDENTITY,
-                ChildOf(entity),
-            ));
-        }
-
-        radio.playable_duration = Timer::new(
-            Duration::from_secs_f32(channel_config.playables[idx].duration),
-            TimerMode::Once,
-        );
     };
 }
 
