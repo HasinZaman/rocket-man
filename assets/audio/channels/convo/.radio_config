@@ -1,0 +1,229 @@
+Story(
+    source: None,
+    playables: [
+        (
+            Playable(
+                audio: "1.ogg",
+                duration: 0.0,
+            ),
+            60.0,
+        ),
+        (
+            Playable(
+                audio: "2.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "3.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "4.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "5.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "6.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "7.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "8.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "9.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "10.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "11.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "12.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "13.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "14.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "15.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "16.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "17.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "18.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "19.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "20.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "21.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "22.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "23.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "24.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "25.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "26.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "27.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "28.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "29.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "30.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "31.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+        (
+            Playable(
+                audio: "32.ogg",
+                duration: 0.0,
+            ),
+            5.0,
+        ),
+    ],
+)

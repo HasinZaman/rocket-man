@@ -1,0 +1,47 @@
+Story(
+    source: None,
+    playables: [
+        (
+            Playable(
+                audio: "1.ogg",
+                duration: 0.0,
+            ),
+            60.0,
+        ),
+        (
+            Playable(
+                audio: "2.ogg",
+                duration: 0.0,
+            ),
+            60.0,
+        ),
+        (
+            Playable(
+                audio: "3.ogg",
+                duration: 0.0,
+            ),
+            60.0,
+        ),
+        (
+            Playable(
+                audio: "4.ogg",
+                duration: 0.0,
+            ),
+            60.0,
+        ),
+        (
+            Playable(
+                audio: "5.ogg",
+                duration: 0.0,
+            ),
+            60.0,
+        ),
+        (
+            Playable(
+                audio: "6.ogg",
+                duration: 0.0,
+            ),
+            60.0,
+        ),
+    ],
+)
