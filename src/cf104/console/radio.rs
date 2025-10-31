@@ -381,9 +381,11 @@ impl AssetLoader for RadioChannelLoader {
 pub struct RadioChannels([Option<Handle<RadioChannelConfig>>; 28]);
 
 pub fn load_channels(mut channels: ResMut<RadioChannels>, asset_server: Res<AssetServer>) {
-    channels.0[4] = Some(asset_server.load("audio\\channels\\lahr_tower\\.radio_config"));
+    channels.0[27] = Some(asset_server.load("audio\\channels\\lahr_tower\\.radio_config"));
     channels.0[6] = Some(asset_server.load("audio\\channels\\channel_6\\.radio_config"));
     channels.0[10] = Some(asset_server.load("audio\\channels\\channel_10\\.radio_config"));
+    channels.0[5] = Some(asset_server.load("audio\\channels\\convo\\.radio_config"));
+    channels.0[4] = Some(asset_server.load("audio\\channels\\files\\.radio_config"));
 }
 
 #[derive(Resource, Debug, Default)]

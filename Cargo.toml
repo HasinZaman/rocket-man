@@ -1,6 +1,6 @@
 [package]
 name = "rocket_man"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 
 # Enable a small amount of optimization in the dev profile.
@@ -20,3 +20,5 @@ thiserror = "2"
 i_overlay = "4.1.0"
 rand = "0.9"
 rand_chacha = "0.9"
+spade ="2.15.0"
+heapify = "0.2.0"
